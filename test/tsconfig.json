@@ -1,0 +1,6 @@
+{
+  "extends": "../kit/tsconfig.json",
+  // The shard's own tests. src/ is the author's three.js scene: `wildshard check` lints and builds it.
+  "compilerOptions": { "allowJs": true, "checkJs": true },
+  "include": ["*.mjs"]
+}

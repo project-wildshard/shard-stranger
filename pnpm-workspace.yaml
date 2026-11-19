@@ -1,10 +1,30 @@
 packages:
   - .
+# GVS G9 (J230): installs link into pnpm's global virtual store. confirmModulesPurge: false
+# lets an existing classic checkout move over on a non-TTY install.
+enableGlobalVirtualStore: true
+confirmModulesPurge: false
+packageExtensions:
+  'postprocessing':
+    peerDependencies:
+      '@types/three': '*'
+    peerDependenciesMeta:
+      '@types/three':
+        optional: true
+  'n8ao':
+    peerDependencies:
+      '@types/three': '*'
+    peerDependenciesMeta:
+      '@types/three':
+        optional: true
+  'navcat':
+    peerDependencies:
+      '@types/three': '*'
+    peerDependenciesMeta:
+      '@types/three':
+        optional: true
 
-# Install scripts (SA39): a dependency runs its preinstall, install or postinstall
-# script only when it is listed `true` below. Wildshard's own packages need none.
-# pnpm skips any other package's script and names it after `pnpm install`; allow
-# one with `pnpm approve-builds` (or `name: true` here) only if you trust it.
-# pnpm 10.34 or later reads this list; pnpm 10.0 to 10.33 runs no script at all;
-# pnpm 9, npm and yarn run every script, so install with pnpm 10.34 or later.
+# Install scripts (SA39, J319): a dependency runs its preinstall, install or
+# postinstall script only when it is listed `true` here. pnpm skips the rest and
+# names them after `pnpm install`. Nothing this shard installs needs one today.
 allowBuilds: {}

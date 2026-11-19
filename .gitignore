@@ -1,6 +1,20 @@
 node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+blob-report/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+# Plan worktrees live at .worktrees/<slug> on plan/<slug> (J221, J240, DEV-SPEED DS11); every repo tool
+# skips them too (scripts/worktree-ignore.mjs, guarded by test/tooling/worktree-guard.test.mjs).
+/.worktrees/
+/.owner
+
+# From `wildshard new`.
 # Build output: the built folder and <slug>.shardfile. Never commit it.
 public/shardfiles/
 public/assets/*/map/
 tmp/
-.DS_Store
