@@ -14,3 +14,9 @@ lived in sharddev's scratch (`tmp/codex-te2e/stranger`); they move here, and `fi
   states the GLB's cost, so the index uses it (format refuses an understated skin cost), and their harvest drops go
   in the item catalogue.
 - The hero is curated (`fixtures/hero.py`), since `wildshard dev` and `hero` do not serve a hand-written shard.
+
+## The staging probe
+
+`proofs/staging-probe.mjs` is the two-player check for ONE-FORMAT CC14, CC36 and OF14's ride: a Chromium desktop page
+and a WebKit phone-size page enter the stranger on staging, and each case compares what both are told of a creature
+(the net client's fields, devMode on) and shoots both pages.
