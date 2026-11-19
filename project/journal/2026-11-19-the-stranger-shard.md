@@ -20,3 +20,10 @@ lived in sharddev's scratch (`tmp/codex-te2e/stranger`); they move here, and `fi
 `proofs/staging-probe.mjs` is the two-player check for ONE-FORMAT CC14, CC36 and OF14's ride: a Chromium desktop page
 and a WebKit phone-size page enter the stranger on staging, and each case compares what both are told of a creature
 (the net client's fields, devMode on) and shoots both pages.
+
+## The first publish failed in phone WebKit
+
+The first Actions prepare timed out: the client threw `Missing creature attachment material toon` at `level.kit`. The mech
+plates and hydra heads hang meshes in material `toon`, which the seed's material registry (`look/look` `materials`) lacked;
+the server sims never draw attachments, so no sim caught it. `compose` now adds a plain `toon` material, and a local
+prepare preview in phone WebKit enters the shard.

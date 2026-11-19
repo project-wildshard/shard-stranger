@@ -578,6 +578,9 @@ async function card(src, read, write) {
   const words = { biome: 'Stranger fixtures', blurb: 'A skeleton horse to ride, a dragon to fight, a wolf pack and a deer herd, and every fixture of the one format.' };
   const look = read('look/look'), hashes = Object.fromEntries(Object.entries(urls).map(([slot, url]) => [slot, url.replace(/^.*\/(\w{64})\.jpg$/u, '$1')]));
   look.presentation = { ...look.presentation, ...words, card: { ...look.presentation.card, ...hashes } };
+  // The mech's plates and the hydra's heads hang meshes in material `toon`; the client compiles attachment materials from
+  // this registry and refuses an absent one (engine clientAttachments.ts), though the server sims never draw them.
+  look.look.materials.toon ??= { ...look.look.materials.door, colour: [0.55, 0.57, 0.6], metalness: 0.6, roughness: 0.5, vertexColours: false };
   write('look/look', look);
   const level = read('ui/level');
   level.manifest = { ...level.manifest, ...words, card: urls };

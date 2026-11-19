@@ -19,7 +19,7 @@ const flag = (name, fallback) => process.argv.find(arg => arg.startsWith(`--${na
 if (engineDir === undefined || outDir === undefined) throw new Error('usage: staging-probe.mjs <engine checkout> <out dir> [--base=…] [--cases=…]');
 const base = flag('base', 'https://staging.wildshard.io').replace(/\/$/u, '');
 if (!/^https:\/\/(staging|preview)\.wildshard\.io$/u.test(base)) throw new Error('--base takes staging or preview only (J205)');
-const cases = flag('cases', 'horse,chameleon,deer,wolves,mech').split(',');
+const cases = flag('cases', 'horse,chameleon,deer,wolves,mech').split(',').filter(Boolean), slug = flag('slug', 'stranger');
 const at = file => import(pathToFileURL(resolve(engineDir, 'scripts', file)).href);
 const { chromium, webkit } = await at('browser-playwright.mjs');
 const { KEYCHAIN_ARGS } = await at('chromium-keychain.mjs');
@@ -37,44 +37,47 @@ async function enter(browser, name, device) {
   await saveFixture(context, { scope: 'device', key: 'devMode', data: true });
   await saveFixture(context, { scope: 'global', key: 'settings', data: { music: false, sfx: false, volume: 0 }, merge: true });
   const t0 = Date.now();
-  await page.goto(`${base}/?chunk=stranger&mute=1&nolock=1&skipintro=1&fps=60`, { waitUntil: 'load', timeout: 120_000 });
+  await page.goto(`${base}/?chunk=${slug}&mute=1&nolock=1&skipintro=1&fps=60`, { waitUntil: 'load', timeout: 120_000 });
   for (const ends = Date.now() + 150_000; Date.now() < ends;) {
-    if (await page.locator('#ws-name-box input').isVisible().catch(() => false)) break;
-    const clicked = await page.evaluate(() => {
-      const all = [...document.querySelectorAll('body *')], head = all.find(e => e.children.length === 0 && (e.textContent ?? '').trim().toUpperCase() === 'STRANGER');
+    if (await page.locator('#ws-name-field').isVisible().catch(() => false)) break;
+    const clicked = await page.evaluate(title => {
+      const all = [...document.querySelectorAll('body *')], head = all.find(e => e.children.length === 0 && (e.textContent ?? '').trim().toUpperCase() === title);
       for (let up = head?.parentElement; up; up = up.parentElement) {
         const load = [...up.querySelectorAll('*')].find(e => e.children.length === 0 && /^(LOAD|ENTER ZONE|ENTER WORLD)$/u.test((e.textContent ?? '').trim().toUpperCase()));
         if (load !== undefined) { (load.closest('button') ?? load).click(); return true; }
       }
       return false;
-    }).catch(() => false);
+    }, slug.toUpperCase().replaceAll('-', ' ')).catch(() => false);
     if (await page.getByText(/could not load|the world didn.t download/iu).isVisible().catch(() => false)) throw new Error(`${name}: the shard could not load`);
     await sleep(clicked ? 4000 : 1000);
   }
-  await page.locator('#ws-name-box input').fill(name);
-  await page.locator('#ws-name-box button[type=submit]').click();
+  await page.locator('#ws-name-field').fill(name);
+  await page.getByRole('button', { name: /let.s go/iu }).click();
   await page.waitForFunction(() => typeof window.__workerClient === 'function' && window.__wildshard?.world?.player !== undefined, undefined, { timeout: 150_000 });
   await page.evaluate(() => window.__wildshard?.world?.hud?.enterNow?.());
   await page.waitForFunction(() => (window.__workerClient?.().frames ?? 0) > 30, undefined, { timeout: 90_000 });
   await page.keyboard.press('Shift');
-  note(`${name} entered the stranger`, true, { ms: Date.now() - t0, cell: (await page.evaluate(() => window.__workerClient().cell)) });
+  note(`${name} entered ${slug}`, true, { ms: Date.now() - t0, cell: (await page.evaluate(() => window.__workerClient().cell)) });
   return { name, page, context, errors };
 }
 
-/** What a page is told and draws: its player, the other players and each creature (by id) with the server's fields. */
+/** What a page is told: its player, the other players and each creature (by the server's id, `creature:N`) with its
+ *  species and the server's fields (cell-local x and z, state, hp, alive, channels, lockable, target). */
 const look = page => page.evaluate(() => {
-  const world = window.__wildshard.world, { player } = world, net = window.__workerClientNet?.().client, fields = new Map();
-  if (net?.latest) for (const [handle, info] of net.entities) { const f = net.fields(net.latest, handle); if (f !== null && f !== undefined && 'species' in f) fields.set(info.id, f); }
-  const bodies = {};
-  for (const body of world.animals?.animals ?? []) {
-    const f = fields.get(body.entityId) ?? {};
-    bodies[body.entityId] = { x: body.position.x, z: body.position.z, drawn: body.alive && !body.hidden, state: f.state ?? null, hp: f.hp ?? null, alive: f.alive ?? null,
+  const world = window.__wildshard.world, { player } = world, net = window.__workerClientNet?.().client, bodies = {};
+  if (net?.latest) for (const [handle, info] of net.entities) {
+    const f = net.fields(net.latest, handle), species = info.initial?.species || info.initial?.kind || f?.species;
+    if (f === null || f === undefined || typeof species !== 'string') continue;
+    bodies[info.id] = { species, x: Number(f.x), z: Number(f.z), state: f.state ?? null, hp: f.hp ?? null, alive: f.alive ?? null,
       ch: [f.channel1, f.channel2, f.channel3, f.channel4], lockable: f.lockable ?? null, target: f.target ?? null };
   }
   const report = window.__workerClient();
   return { me: { x: player.position.x, z: player.position.z, hp: report.hp, falls: report.falls }, bodies,
     others: (window.__onlinePlayers?.() ?? []).map(other => ({ name: other.name, x: other.x, z: other.z, speed: other.speed, mounted: other.mounted })) };
 });
+/** The server ids of `species`, in id order (the same on every page). */
+const idsOf = (seen, species) => Object.keys(seen.bodies).filter(id => seen.bodies[id].species === species).sort((a, b) => Number(a.split(':')[1]) - Number(b.split(':')[1]));
+const named = (seen, who) => seen.others.find(other => other.name.startsWith(who));
 const steer = (page, x, z, forward, sprint, swing = false) => page.evaluate(([tx, tz, y, run, hit]) => {
   const { player, game } = window.__wildshard.world;
   player.yaw = Math.atan2(-(tx - player.position.x), -(tz - player.position.z)); player.pitch = -0.15;
@@ -102,7 +105,7 @@ async function both(ana, bo, name) { shots.push({ name, ana: await shot(ana, nam
 
 const CASES = {
   async horse(ana, bo) {
-    const id = 'fixture.bonehorse';
+    const [id] = idsOf(await look(bo.page), 'fixture.bonehorse');
     await goTo(bo, id, 9);
     const reached = await goTo(ana, id, 1.6);
     note('horse: Ana beside the skeleton horse', reached.away !== null && reached.away <= 1.6, { away: reached.away });
@@ -115,7 +118,7 @@ const CASES = {
       const a = await look(ana.page), b = await look(bo.page), t = Date.now();
       await sleep(1000);
       const a2 = await look(ana.page), b2 = await look(bo.page), dt = (Date.now() - t) / 1000;
-      const seenByBo = (from, to) => { const p = from.others.find(o => o.name === 'Ana'), q = to.others.find(o => o.name === 'Ana'); return p?.x === undefined || q?.x === undefined ? null : Math.hypot(q.x - p.x, q.z - p.z) / dt; };
+      const seenByBo = (from, to) => { const p = named(from, 'Ana'), q = named(to, 'Ana'); return p?.x === undefined || q?.x === undefined ? null : Math.hypot(q.x - p.x, q.z - p.z) / dt; };
       return { own: Math.hypot(a2.bodies[id].x - a.bodies[id].x, a2.bodies[id].z - a.bodies[id].z) / dt, player: Math.hypot(a2.me.x - a.me.x, a2.me.z - a.me.z) / dt, bo: seenByBo(b, b2) };
     };
     const walk = await pace(0.3, false, 3);
@@ -129,12 +132,12 @@ const CASES = {
     await both(ana, bo, 'horse-off');
     const ok = note('horse: rode it at the row\'s gaits and got off beside it', walk.own > 1.2 && walk.own < 3 && gallop.own > 8.5 && gallop.own < 11.5 && off < 3,
       { mounted, walk, gallop, off });
-    const boSees = (await look(bo.page)).others.find(other => other.name === 'Ana');
+    const boSees = named(await look(bo.page), 'Ana');
     note('horse: Bo saw Ana ride at a gallop', gallop.bo !== null && gallop.bo > 6, { bo: gallop.bo, now: boSees });
     return ok;
   },
   async chameleon(ana, bo) {
-    const id = 'fixture.chameleon';
+    const [id] = idsOf(await look(bo.page), 'fixture.chameleon');
     await goTo(bo, id, 9);
     const far = { ana: (await look(ana.page)).bodies[id], bo: (await look(bo.page)).bodies[id] };
     note('chameleon: faded and not lockable at range, on both pages', far.ana?.ch[0] < 0.2 && far.bo?.ch[0] < 0.2 && far.bo?.lockable === 'off', { ana: far.ana, bo: far.bo });
@@ -146,7 +149,7 @@ const CASES = {
     return note('chameleon: shown and lockable inside 4 m, on both pages', near.ana?.ch[0] === 1 && near.bo?.ch[0] === 1 && near.bo?.lockable === 'on', { ana: near.ana, bo: near.bo });
   },
   async deer(ana, bo) {
-    const ids = ['stranger.deer.1', 'stranger.deer.2', 'stranger.deer.3'];
+    const ids = idsOf(await look(bo.page), 'kit.creature.deer');
     await goTo(bo, ids[0], 26);
     await both(ana, bo, 'deer-before');
     let fled = null;
@@ -162,8 +165,7 @@ const CASES = {
     return note('deer: a hind bolts, on both pages', fled !== null, fled ?? undefined);
   },
   async wolves(ana, bo) {
-    const ids = ['stranger.wolf.1', 'stranger.wolf.2', 'stranger.wolf.3'];
-    const start = await look(bo.page);
+    const start = await look(bo.page), ids = idsOf(start, 'kit.creature.wolf');
     note('wolves: the pack stands, on both pages', ids.every(id => start.bodies[id]?.alive === true), Object.fromEntries(ids.map(id => [id, start.bodies[id]?.state])));
     await goTo(bo, ids[1], 24); await goTo(ana, ids[0], 24);
     await both(ana, bo, 'wolves-before');
@@ -192,7 +194,7 @@ const CASES = {
     return note('wolves: both players land hits', landed.Ana > 0 && landed.Bo > 0, { landed, hp0, last });
   },
   async mech(ana, bo) {
-    const id = 'fixture.mech.1';
+    const [id] = idsOf(await look(bo.page), 'fixture.mech');
     await goTo(bo, id, 14);
     await goTo(ana, id, 2.2, 40);
     let broken = null;
@@ -219,8 +221,10 @@ try {
   ana = await enter(cBrowser, 'Ana', { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
   bo = await enter(wBrowser, 'Bo', { viewport: { width: 402, height: 874 }, deviceScaleFactor: 1, hasTouch: true });
   const met = await look(ana.page);
-  note('two players: Ana sees Bo', met.others.some(other => other.name === 'Bo'), met.others);
+  note('two players: Ana sees Bo', named(met, 'Bo') !== undefined, met.others);
   await both(ana, bo, 'entered');
+  const census = await look(bo.page);
+  note('Bo\'s creatures', true, Object.entries(census.bodies).slice(0, 40).map(([id, body]) => `${id}:${body.species}:${body.state}:${body.hp}`));
   for (const name of cases) {
     try { verdicts[name] = await CASES[name](ana, bo); }
     catch (error) { verdicts[name] = note(`${name}: threw`, false, String(error?.stack ?? error).slice(0, 600)); }
