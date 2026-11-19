@@ -1,0 +1,10 @@
+packages:
+  - .
+
+# Install scripts (SA39): a dependency runs its preinstall, install or postinstall
+# script only when it is listed `true` below. Wildshard's own packages need none.
+# pnpm skips any other package's script and names it after `pnpm install`; allow
+# one with `pnpm approve-builds` (or `name: true` here) only if you trust it.
+# pnpm 10.34 or later reads this list; pnpm 10.0 to 10.33 runs no script at all;
+# pnpm 9, npm and yarn run every script, so install with pnpm 10.34 or later.
+allowBuilds: {}

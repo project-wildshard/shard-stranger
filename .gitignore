@@ -1,0 +1,6 @@
+node_modules/
+# Build output: the built folder and <slug>.shardfile. Never commit it.
+public/shardfiles/
+public/assets/*/map/
+tmp/
+.DS_Store
