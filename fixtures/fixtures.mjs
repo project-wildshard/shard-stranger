@@ -325,13 +325,14 @@ else{emit(${DO.actorChannel},self(),0,0.1,0);emit(${DO.lockable},self(),0,0,0);}
       // Handles are each catalogue sorted by id: actor 1; strikes breath 1, claw 2, fireball 3, tail 4; moves climb 1,
       // land 2, orbit 3, walk 4. state 0: the phase (0 air, 1 landed); state 1: decision calls. The air phase climbs,
       // then orbits the player breathing and spitting fireballs; the encounter's hp gate (half) lands it, and it walks
-      // in to fight on with claws and tail.
+      // in to fight on with claws and tail. Landed but whole again (its spawn's respawn stood it up), it takes wing anew.
       const me = A('fixture.dragon', 1), [breath, claw, fireball, tail] = ['breath', 'claw', 'fireball', 'tail'].map((k, n) => S(`fixture.dragon.${k}`, n + 1));
       const [climb, land, orbit, walk] = ['climb', 'land', 'orbit', 'walk'].map((k, n) => M(`fixture.dragon.${k}`, n + 1));
       const wasm = await compileScript(guest(`const p=read(${READ.nearestPlayer},${me},0);const hp=read(${READ.hpShare},${me},0);
 for(let i=0;i<events();i++){const k=i32(ev(i,0));if(k==${ON.start})emit(${DO.move},${me},${climb},0,0);
 if(k==${ON["move.done"]})emit(${DO.move},${me},state(0)==0?${orbit}:${walk},state(0)==0?0:p,0);}
 if(state(0)==0&&hp<=0.5){setState(0,1);emit(${DO.move},${me},${land},0,0);}
+if(state(0)==1&&hp>0.5){setState(0,0);emit(${DO.move},${me},${climb},0,0);}
 setState(1,state(1)+1);const n=i32(state(1));
 if(p!=0&&n%6==0){if(state(0)==0)emit(${DO.strike},${me},n%12==0?${breath}:${fireball},p,0);else emit(${DO.strike},${me},n%12==0?${claw}:${tail},p,0);}`, 2), { abi: 1 });
       const row = species('fixture.dragon', 'Dragon', 400, { flight: { altitude: 6, above: 'world', climbRate: 6, diveRate: 8 } });
@@ -586,6 +587,7 @@ const LAYOUT = {
   mech: [-64, 8], hydra: [-55, 32], shifter: [32, -55],
 };
 const PYTHON = { rabbit: [-28, -50], dragonfly: [-8, -60] };
+const BOSSES = ['dragon', 'mech'];
 const POPULATION = { wolf: { group: 'stranger.wolves', at: [[30, 52], [33, 55], [27, 56]] }, deer: { group: 'stranger.deer', at: [[-30, 52], [-33, 56], [-27, 57]] } };
 async function compose(src) {
   const kit = resolve(sdk, 'packages/kit/content');
@@ -668,7 +670,9 @@ async function gather(kit, src) {
     const spawns = (rows.spawns ?? rows.species.map(row => ({ id: row.id, species: row.id })))
       .map((row, i) => ({ ...row, at: id === 'horse' ? [x, 0, z] : row.at ?? [x + i * 3, 0, z] }));
     for (const fight of rows.encounters ?? []) { fight.arena.at = [x, 0, z]; fight.respawn.at = [x, 0, z + 20]; }
-    take(rows, spawns);
+    // the dragon and the mech stand again 30 s after they fall (their encounter re-arms with the body), so every probe
+    // meets a living boss, as the pack and the herd do
+    take(rows, BOSSES.includes(id) ? spawns.map(row => ({ ...row, respawn: 30 })) : spawns);
   }
   // the rabbit and the dragonfly are Python's (write-fixture.py), written into a seed of their own and carried over
   for (const [id, [x, z]] of Object.entries(PYTHON)) {
