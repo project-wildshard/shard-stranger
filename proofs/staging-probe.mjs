@@ -89,13 +89,22 @@ const steer = (page, x, z, forward, sprint, swing = false) => page.evaluate(([tx
   if (hit) game.app.input.press('attack');
 }, [x, z, forward, sprint, swing]);
 const stop = page => page.evaluate(() => { const { player } = window.__wildshard.world; player.touchMove.x = 0; player.touchMove.y = 0; player.touchSprint = false; });
-/** Walk `who` to within `near` m of creature `id` (as its own page draws it). */
-async function goTo(who, id, near, seconds = 40) {
+/** Walk `who` to within `near` m of creature `id` (as its own page draws it). A straight line can meet a wall (the seed's
+ *  hall stands between the spawn and the mech): with under half a metre gained in 2.5 s it walks 7 m aside, alternating
+ *  sides, and tries again. */
+async function goTo(who, id, near, seconds = 60) {
+  let best = Infinity, since = Date.now(), side = 1;
   for (const ends = Date.now() + seconds * 1000; Date.now() < ends;) {
     const seen = await look(who.page), body = seen.bodies[id];
     if (body === undefined) { await sleep(250); continue; }
     const away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z);
     if (away <= near) { await stop(who.page); return { away, seen }; }
+    if (away < best - 0.5) { best = away; since = Date.now(); }
+    else if (Date.now() - since > 2500) {
+      const dx = (body.x - seen.me.x) / away, dz = (body.z - seen.me.z) / away, aside = { x: seen.me.x - dz * 7 * side, z: seen.me.z + dx * 7 * side };
+      for (const off = Date.now() + 1800; Date.now() < off;) { await steer(who.page, aside.x, aside.z, 1, true); await sleep(150); }
+      side = -side; best = Infinity; since = Date.now(); continue;
+    }
     await steer(who.page, body.x, body.z, 1, away > 10);
     await sleep(150);
   }
@@ -182,44 +191,49 @@ const CASES = {
     return note('deer: a hind bolts, on both pages', fled !== null, fled ?? undefined);
   },
   async wolves(ana, bo) {
-    const start = await look(bo.page), ids = idsOf(start, 'kit.creature.wolf');
+    // the pack stands again 30 s after it falls (stranger revision 3): wait for it
+    let start = await look(bo.page), ids = idsOf(start, 'kit.creature.wolf');
+    for (const ends = Date.now() + 45_000; Date.now() < ends && !ids.every(id => start.bodies[id]?.alive === true);) { await sleep(1000); start = await look(bo.page); }
     note('wolves: the pack stands, on both pages', ids.every(id => start.bodies[id]?.alive === true), Object.fromEntries(ids.map(id => [id, start.bodies[id]?.state])));
     await goTo(bo, ids[1], 24); await goTo(ana, ids[0], 24);
     await both(ana, bo, 'wolves-before');
-    const hp0 = Object.fromEntries(ids.map(id => [id, (start.bodies[id]?.hp ?? 80)]));
-    const landed = { Ana: 0, Bo: 0 }, assist = new Set(), seenOnBoth = new Set();
-    let last = { ...hp0 };
-    const aims = { Ana: ids[0], Bo: ids[1] };
-    for (const ends = Date.now() + 45_000; Date.now() < ends && !(landed.Ana > 0 && landed.Bo > 0 && assist.size >= 2);) {
-      // each player fights the live wolf nearest them, Bo a different one from Ana's while two stand
-      for (const who of [ana, bo]) {
-        const seen = await look(who.page), alive = ids.filter(id => seen.bodies[id]?.alive === true && !(who === bo && id === aims.Ana && ids.filter(each => seen.bodies[each]?.alive === true).length > 1));
-        const target = alive.sort((a, b) => Math.hypot(seen.bodies[a].x - seen.me.x, seen.bodies[a].z - seen.me.z) - Math.hypot(seen.bodies[b].x - seen.me.x, seen.bodies[b].z - seen.me.z))[0];
-        aims[who.name] = target; if (target === undefined) continue;
-        const body = seen.bodies[target], away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z);
-        // once Ana has landed one, she holds back so the pack is still there for Bo
-        const swing = away < 3.2 && !(who === ana && landed.Ana > 0);
-        await steer(who.page, body.x, body.z, away > 1.8 && !(who === ana && landed.Ana > 0) ? 1 : 0, false, swing);
-      }
-      await sleep(250);
+    const assist = new Set(), seenOnBoth = new Set(), landed = { Ana: 0, Bo: 0 }, swings = { Ana: 0, Bo: 0 }, close = { Ana: Infinity, Bo: Infinity };
+    const watch = async () => {
       const [a, b] = [await look(ana.page), await look(bo.page)];
       for (const id of ids) {
-        if (a.bodies[id]?.state === 'stalk' || a.bodies[id]?.target !== null && a.bodies[id]?.target !== undefined) assist.add(id);
-        if (a.bodies[id]?.state === b.bodies[id]?.state && a.bodies[id]?.state === 'stalk') seenOnBoth.add(id);
-        const hp = b.bodies[id]?.hp;
-        if (typeof hp === 'number' && hp < last[id]) { if (id === aims.Ana && id !== aims.Bo) landed.Ana += 1; else if (id === aims.Bo && id !== aims.Ana) landed.Bo += 1; last[id] = hp; }
+        if (a.bodies[id]?.state === 'stalk' || (a.bodies[id]?.target !== null && a.bodies[id]?.target !== undefined)) assist.add(id);
+        if (a.bodies[id]?.state === 'stalk' && b.bodies[id]?.state === 'stalk') seenOnBoth.add(id);
       }
-    }
-    await stop(ana.page); await stop(bo.page);
+      return b;
+    };
+    // One fighter at a time, so a wolf's lost hp is that fighter's blow: Bo first (the phone), then Ana. The other stands.
+    const fight = async (who, seconds) => {
+      let aim = null, hp = null;
+      for (const ends = Date.now() + seconds * 1000; Date.now() < ends && landed[who.name] === 0;) {
+        const seen = await look(who.page), alive = ids.filter(id => seen.bodies[id]?.alive === true);
+        const target = aim !== null && alive.includes(aim) ? aim : alive.sort((p, q) => Math.hypot(seen.bodies[p].x - seen.me.x, seen.bodies[p].z - seen.me.z) - Math.hypot(seen.bodies[q].x - seen.me.x, seen.bodies[q].z - seen.me.z))[0];
+        if (target === undefined) { await sleep(500); continue; }
+        if (target !== aim) { aim = target; hp = seen.bodies[target].hp; }
+        const body = seen.bodies[target], away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z), swing = away < 2.6;
+        close[who.name] = Math.min(close[who.name], away); if (swing) swings[who.name]++;
+        await steer(who.page, body.x, body.z, away > 1.6 ? 1 : 0, false, swing);
+        await sleep(250);
+        const b = await watch(), now = b.bodies[target]?.hp;
+        if (typeof now === 'number' && typeof hp === 'number' && now < hp) { landed[who.name]++; hp = now; }
+      }
+      await stop(who.page);
+    };
+    await fight(bo, 40);
+    await fight(ana, 30);
     await both(ana, bo, 'wolves-fight');
     note('wolves: Bo\'s weapon', true, await bo.page.evaluate(() => { const app = window.__wildshard.world.game.app; return { current: app.equipment?.current?.constructor?.name ?? null, melee: app.input.active('weapon.melee') }; }));
     note('wolves: the pack hunts together (assist), seen on both pages', assist.size >= 2 && seenOnBoth.size >= 2, { hunting: [...assist], onBoth: [...seenOnBoth] });
-    return note('wolves: both players land hits', landed.Ana > 0 && landed.Bo > 0, { landed, hp0, last });
+    return note('wolves: both players land hits', landed.Ana > 0 && landed.Bo > 0, { landed, swings, closest: close });
   },
   async mech(ana, bo) {
     const [id] = idsOf(await look(bo.page), 'fixture.mech');
     await goTo(bo, id, 14);
-    await goTo(ana, id, 2.2, 40);
+    await goTo(ana, id, 2.2, 90);
     let broken = null;
     for (const ends = Date.now() + 40_000; Date.now() < ends && broken === null;) {
       const seen = await look(ana.page), body = seen.bodies[id];

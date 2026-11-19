@@ -673,7 +673,8 @@ async function gather(kit, src) {
     take({ species: [row], strikes, looks: [{ id: row.body.look, species: row.id, recipe: 'platform.skin', material: null, parameters: { skin: hash(metadata) },
       animation: { recipe: 'platform.clips', parameters: { attackSpan: 1 } } }],
     files: [{ bytes: glbBytes, kind: 'glb', cost: JSON.parse(metadata).row.cost }, { bytes: metadata, kind: 'json', dependencies: [hash(glbBytes)], library: true }] },
-    at.map(([x, z], i) => ({ id: `stranger.${name}.${i + 1}`, species: row.id, variant: row.variants[0].id, group, at: [x, 0, z] })));
+    // a fallen wolf or deer stands again after 30 s, so the herd and the pack are there for every probe
+    at.map(([x, z], i) => ({ id: `stranger.${name}.${i + 1}`, species: row.id, variant: row.variants[0].id, group, at: [x, 0, z], respawn: 30 })));
   }
   return all;
 }
