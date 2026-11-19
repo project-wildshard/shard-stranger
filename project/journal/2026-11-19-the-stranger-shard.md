@@ -33,3 +33,11 @@ prepare preview in phone WebKit enters the shard.
 The first staging probe found no weapon: the seed's loadout is empty, so neither player could land a hit on the pack or
 the mech. `compose` adds a plain iron sword in the kit's melee family (Mirror Salt's row shape) as the primary. The
 deer bolt and the wolf pack's assist already showed on both pages.
+
+## What staging showed (revision 2)
+
+Two-player runs on staging, engine v0.1.48 (meta board: https://claude.ai/artifact/X48DLCRUktwQ74wfjpkoyp):
+a hind bolts and the wolf pack stalks together on both pages; Ana's sword kills a wolf in three hits; the chameleon is
+faded at range. Two engine gaps: the chameleon never reveals with two players apart (every decision script reads the
+host's one focused player), and a seated rider's forward input never moves the declared mount on the cell server, though
+the server sim rides the same row. Bo's phone hits and the mech plate are still unproven.

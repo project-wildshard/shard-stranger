@@ -51,8 +51,10 @@ async function enter(browser, name, device) {
     if (await page.getByText(/could not load|the world didn.t download/iu).isVisible().catch(() => false)) throw new Error(`${name}: the shard could not load`);
     await sleep(clicked ? 4000 : 1000);
   }
-  await page.locator('#ws-name-field').fill(name);
-  await page.getByRole('button', { name: /let.s go/iu }).click();
+  if (await page.locator('#ws-name-field').isVisible().catch(() => false)) {
+    await page.locator('#ws-name-field').fill(name);
+    await page.getByRole('button', { name: /let.s go/iu }).click();
+  } else await page.screenshot({ path: resolve(outDir, `${name.toLowerCase()}-no-name-box.png`) }).catch(() => undefined);
   await page.waitForFunction(() => typeof window.__workerClient === 'function' && window.__wildshard?.world?.player !== undefined, undefined, { timeout: 150_000 });
   await page.evaluate(() => window.__wildshard?.world?.hud?.enterNow?.());
   await page.waitForFunction(() => (window.__workerClient?.().frames ?? 0) > 30, undefined, { timeout: 90_000 });
@@ -115,16 +117,27 @@ const CASES = {
     await sleep(800);
     const mounted = named(await look(bo.page), 'Ana');
     const pace = async (forward, sprint, seconds) => {
-      const hold = () => ana.page.evaluate(([y, run]) => { const { player } = window.__wildshard.world; player.touchMove.x = 0; player.touchMove.y = y; player.touchSprint = run; }, [forward, sprint]);
+      // the mount reads held actions (move.forward, ride.gallop), not the walking player's stick
+      const hold = (on = true) => ana.page.evaluate(([y, run, down]) => {
+        const { player, game } = window.__wildshard.world, input = game.app.input;
+        player.touchMove.x = 0; player.touchMove.y = down ? y : 0; player.touchSprint = down && run;
+        input.setHeld('move.forward', down); for (const name of ['ride.gallop', 'sprint']) { try { input.setHeld(name, down && run); } catch { /* not this page's action */ } }
+      }, [forward, sprint, on]);
       for (const ends = Date.now() + (seconds - 1) * 1000; Date.now() < ends;) { await hold(); await sleep(150); }
       const keep = setInterval(() => { hold().catch(() => undefined); }, 150);
       const a = await look(ana.page), b = await look(bo.page), t = Date.now();
       await sleep(1000);
       const a2 = await look(ana.page), b2 = await look(bo.page), dt = (Date.now() - t) / 1000;
-      clearInterval(keep);
+      clearInterval(keep); await hold(false);
       const seenByBo = (from, to) => { const p = named(from, 'Ana'), q = named(to, 'Ana'); return p?.x === undefined || q?.x === undefined ? null : Math.hypot(q.x - p.x, q.z - p.z) / dt; };
       return { own: Math.hypot(a2.bodies[id].x - a.bodies[id].x, a2.bodies[id].z - a.bodies[id].z) / dt, player: Math.hypot(a2.me.x - a.me.x, a2.me.z - a.me.z) / dt, bo: seenByBo(b, b2) };
     };
+    await ana.page.evaluate(() => { const { player, game } = window.__wildshard.world; player.touchMove.y = 1; game.app.input.setHeld('move.forward', true); });
+    await sleep(400);
+    const held = await ana.page.evaluate(() => { const { player } = window.__wildshard.world;
+      const c = player.sampleHeldCommand(), sent = player.sampleCommand?.(), rideSample = player.ride?.sampleCommand?.() ?? null, rideClass = player.ride?.constructor?.name ?? null, m = window.__wildshard.world.mount ?? window.__wildshard.world.riding ?? null;
+      return { command: c, sent, rideClass, rideSample, mountObject: m === null ? null : Object.keys(m).slice(0, 12), state: player.state ?? null, mounted: player.mounted ?? player.riding ?? null, worldKeys: Object.keys(window.__wildshard.world).filter(k => /ride|mount|horse/iu.test(k)) }; });
+    note('horse: what Ana\'s page sends while seated', true, held);
     const walk = await pace(0.3, false, 3);
     await both(ana, bo, 'horse-walk');
     const gallop = await pace(1, true, 5);
@@ -176,12 +189,17 @@ const CASES = {
     const hp0 = Object.fromEntries(ids.map(id => [id, (start.bodies[id]?.hp ?? 80)]));
     const landed = { Ana: 0, Bo: 0 }, assist = new Set(), seenOnBoth = new Set();
     let last = { ...hp0 };
+    const aims = { Ana: ids[0], Bo: ids[1] };
     for (const ends = Date.now() + 45_000; Date.now() < ends && !(landed.Ana > 0 && landed.Bo > 0 && assist.size >= 2);) {
-      for (const [who, target] of [[ana, ids[0]], [bo, ids[1]]]) {
-        const seen = await look(who.page), body = seen.bodies[target];
-        if (body === undefined || body.alive === false) continue;
-        const away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z);
-        await steer(who.page, body.x, body.z, away > 1.8 ? 1 : 0, false, away < 2.6);
+      // each player fights the live wolf nearest them, Bo a different one from Ana's while two stand
+      for (const who of [ana, bo]) {
+        const seen = await look(who.page), alive = ids.filter(id => seen.bodies[id]?.alive === true && !(who === bo && id === aims.Ana && ids.filter(each => seen.bodies[each]?.alive === true).length > 1));
+        const target = alive.sort((a, b) => Math.hypot(seen.bodies[a].x - seen.me.x, seen.bodies[a].z - seen.me.z) - Math.hypot(seen.bodies[b].x - seen.me.x, seen.bodies[b].z - seen.me.z))[0];
+        aims[who.name] = target; if (target === undefined) continue;
+        const body = seen.bodies[target], away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z);
+        // once Ana has landed one, she holds back so the pack is still there for Bo
+        const swing = away < 3.2 && !(who === ana && landed.Ana > 0);
+        await steer(who.page, body.x, body.z, away > 1.8 && !(who === ana && landed.Ana > 0) ? 1 : 0, false, swing);
       }
       await sleep(250);
       const [a, b] = [await look(ana.page), await look(bo.page)];
@@ -189,11 +207,12 @@ const CASES = {
         if (a.bodies[id]?.state === 'stalk' || a.bodies[id]?.target !== null && a.bodies[id]?.target !== undefined) assist.add(id);
         if (a.bodies[id]?.state === b.bodies[id]?.state && a.bodies[id]?.state === 'stalk') seenOnBoth.add(id);
         const hp = b.bodies[id]?.hp;
-        if (typeof hp === 'number' && hp < last[id]) { if (id === ids[0]) landed.Ana += 1; else if (id === ids[1]) landed.Bo += 1; last[id] = hp; }
+        if (typeof hp === 'number' && hp < last[id]) { if (id === aims.Ana && id !== aims.Bo) landed.Ana += 1; else if (id === aims.Bo && id !== aims.Ana) landed.Bo += 1; last[id] = hp; }
       }
     }
     await stop(ana.page); await stop(bo.page);
     await both(ana, bo, 'wolves-fight');
+    note('wolves: Bo\'s weapon', true, await bo.page.evaluate(() => { const app = window.__wildshard.world.game.app; return { current: app.equipment?.current?.constructor?.name ?? null, melee: app.input.active('weapon.melee') }; }));
     note('wolves: the pack hunts together (assist), seen on both pages', assist.size >= 2 && seenOnBoth.size >= 2, { hunting: [...assist], onBoth: [...seenOnBoth] });
     return note('wolves: both players land hits', landed.Ana > 0 && landed.Bo > 0, { landed, hp0, last });
   },
@@ -206,7 +225,7 @@ const CASES = {
       const seen = await look(ana.page), body = seen.bodies[id];
       if (body === undefined) break;
       const away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z);
-      await steer(ana.page, body.x, body.z, away > 1.8 ? 1 : 0, false, away < 2.6);
+      await steer(ana.page, body.x, body.z, away > 2.4 ? 1 : 0, false, away < 4.5);
       await sleep(300);
       const [a, b] = [await look(ana.page), await look(bo.page)];
       const plate = [0, 1, 2, 3].find(i => a.bodies[id]?.ch[i] === 1 && b.bodies[id]?.ch[i] === 1);
@@ -214,7 +233,8 @@ const CASES = {
     }
     await stop(ana.page);
     await both(ana, bo, 'mech-plate');
-    return note('mech: a broken plate, on both pages', broken !== null, broken ?? (await look(bo.page)).bodies[id]);
+    const end = await look(ana.page);
+    return note('mech: a broken plate, on both pages', broken !== null, broken ?? { ...end.bodies[id], anaGap: Math.hypot(end.bodies[id].x - end.me.x, end.bodies[id].z - end.me.z) });
   },
 };
 
