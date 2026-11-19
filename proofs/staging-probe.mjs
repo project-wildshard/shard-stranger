@@ -179,11 +179,16 @@ const CASES = {
     const far = { ana: (await look(ana.page)).bodies[id], bo: (await look(bo.page)).bodies[id] };
     note('chameleon: faded and not lockable at range, on both pages', far.ana?.ch[0] < 0.2 && far.bo?.ch[0] < 0.2 && far.bo?.lockable === 'off', { ana: far.ana, bo: far.bo });
     await both(ana, bo, 'chameleon-far');
-    await goTo(ana, id, 3);
+    // v0.1.50 (opus-of-proofs50b): from the spawn a wall stops the straight walk 19.6 m short; the mech's yard is reached, and
+    // the chameleon stands 24 m south of it, so a stuck walk goes by way of the mech
+    if ((await goTo(ana, id, 3)).away > 3) {
+      const [mech] = idsOf(await look(ana.page), 'fixture.mech');
+      if (mech !== undefined) { await goTo(ana, mech, 4); await goTo(ana, id, 3); }
+    }
     await sleep(800);
     const anaNow = await look(ana.page), near = { gap: Math.hypot(anaNow.bodies[id].x - anaNow.me.x, anaNow.bodies[id].z - anaNow.me.z), ana: anaNow.bodies[id], bo: (await look(bo.page)).bodies[id] };
     await both(ana, bo, 'chameleon-near');
-    return note('chameleon: shown and lockable inside 4 m, on both pages', near.ana?.ch[0] === 1 && near.bo?.ch[0] === 1 && near.bo?.lockable === 'on', { ana: near.ana, bo: near.bo });
+    return note('chameleon: shown and lockable inside 4 m, on both pages', near.ana?.ch[0] === 1 && near.bo?.ch[0] === 1 && near.bo?.lockable === 'on', { gap: near.gap, ana: near.ana, bo: near.bo });
   },
   async deer(ana, bo) {
     const ids = idsOf(await look(bo.page), 'kit.creature.deer');

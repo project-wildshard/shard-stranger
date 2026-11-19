@@ -1,1 +1,1 @@
-{"hooks":{"conditions":[{"equals":1,"fieldId":101,"id":"blender.door.open","scope":"shared"}],"scenes":[{"id":"blender.door.toggle","type":201,"value":1}]}}
+{"hooks":{"conditions":[{"equals":1,"fieldId":101,"id":"brasscap.gate.open","scope":"shared"}],"scenes":[{"id":"brasscap.rack.take","type":102,"value":3},{"id":"brasscap.rack.reload","type":102,"value":4},{"id":"brasscap.gate.open","type":301,"value":1}]}}
