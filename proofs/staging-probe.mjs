@@ -94,7 +94,11 @@ const steer = (page, x, z, forward, sprint, swing = false, pitch = -0.15) => pag
   if (hit) game.app.input.press('attack');
 }, [x, z, forward, sprint, swing, pitch]);
 /** Take a weapon into hand by its row (revision 4: the lever is the primary, the sword the second slot). */
-const hold = (page, id) => page.evaluate(row => { window.__wildshard.world.game.app.equipment?.select(row, true); }, id);
+const hold = (page, id) => page.evaluate(row => {
+  const equipment = window.__wildshard.world.game.app.equipment, weapon = equipment?.list.find(entry => entry.row?.id === row || entry.id === row);
+  if (weapon !== undefined) equipment.select(weapon.id, true);
+  return weapon?.id ?? null;
+}, id);
 const stop = page => page.evaluate(() => { const { player } = window.__wildshard.world; player.touchMove.x = 0; player.touchMove.y = 0; player.touchSprint = false; });
 /** Walk `who` to within `near` m of creature `id` (as its own page draws it). A straight line can meet a wall (the seed's
  *  hall stands between the spawn and the mech): with under half a metre gained in 2.5 s it walks 7 m aside, alternating
@@ -248,15 +252,15 @@ const CASES = {
     const seenBy = async () => ({ a: (await look(ana.page)).bodies[id], b: (await look(bo.page)).bodies[id] });
     const start = await seenBy();
     note('boss: the dragon stands, on both pages', start.a?.alive === true && start.b?.alive === true, start);
-    const landed = { Ana: 0, Bo: 0 }, ground = start.a?.y ?? 0;
-    let high = 0;
+    const landed = { Ana: 0, Bo: 0 };
+    let high = start.a?.y ?? 0, ground = start.a?.y ?? 0;
     const shoot = async (who, seconds, until) => {
       await hold(who.page, 'weapon.stranger-lever');
       const hits0 = (await look(who.page)).me.hits;
       for (const ends = Date.now() + seconds * 1000; Date.now() < ends;) {
         const seen = await look(who.page), body = seen.bodies[id];
         if (body === undefined || body.alive !== true) break;
-        high = Math.max(high, body.y - ground);
+        high = Math.max(high, body.y); ground = Math.min(ground, body.y);
         const away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z);
         if (away > 16) { await goTo(who, id, 12, 10); continue; }
         const pitch = Math.atan2(body.y + MIDDLE_Y - (seen.me.y + 1.68), Math.max(0.3, away));
@@ -275,7 +279,7 @@ const CASES = {
     let down = null;
     for (const ends = Date.now() + 15_000; Date.now() < ends && down === null;) {
       const now = await seenBy();
-      if (now.a !== undefined && now.b !== undefined && now.a.y - ground < 0.8 && now.b.y - ground < 0.8 && now.a.hp < 200) down = now;
+      if (now.a !== undefined && now.b !== undefined && Math.abs(now.a.y - now.b.y) < 0.8 && high - now.a.y > 2.5 && now.a.hp < 200) down = now;
       else await sleep(500);
     }
     // on the ground: both close in with swords for a while (the fight, not necessarily the kill)
@@ -291,7 +295,8 @@ const CASES = {
     for (const who of [ana, bo]) await stop(who.page);
     await both(ana, bo, 'boss-ground');
     const end = await seenBy();
-    note('boss: the dragon flew, and both players\' shots hit it', high > 2.5 && landed.Ana > 0 && landed.Bo > 0, { high, landed });
+    const low = Math.min(ground, down?.a.y ?? Infinity, end.a?.y ?? Infinity);
+    note('boss: the dragon flew, and both players\' shots hit it', high - low > 2.5 && landed.Ana > 0 && landed.Bo > 0, { high, low, landed });
     return note('boss: its hp gate lands it, on both pages', down !== null, down ?? { end, high, landed });
   },
   async mech(ana, bo) {
