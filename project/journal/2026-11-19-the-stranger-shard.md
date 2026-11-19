@@ -27,3 +27,9 @@ The first Actions prepare timed out: the client threw `Missing creature attachme
 plates and hydra heads hang meshes in material `toon`, which the seed's material registry (`look/look` `materials`) lacked;
 the server sims never draw attachments, so no sim caught it. `compose` now adds a plain `toon` material, and a local
 prepare preview in phone WebKit enters the shard.
+
+## A sword for the walk
+
+The first staging probe found no weapon: the seed's loadout is empty, so neither player could land a hit on the pack or
+the mech. `compose` adds a plain iron sword in the kit's melee family (Mirror Salt's row shape) as the primary. The
+deer bolt and the wolf pack's assist already showed on both pages.

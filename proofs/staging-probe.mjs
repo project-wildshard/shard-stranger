@@ -78,6 +78,8 @@ const look = page => page.evaluate(() => {
 /** The server ids of `species`, in id order (the same on every page). */
 const idsOf = (seen, species) => Object.keys(seen.bodies).filter(id => seen.bodies[id].species === species).sort((a, b) => Number(a.split(':')[1]) - Number(b.split(':')[1]));
 const named = (seen, who) => seen.others.find(other => other.name.startsWith(who));
+/** Get on or off through the page's own ride press (it carries the live command seq). */
+const ride = (page, action) => page.evaluate(how => { const net = window.__workerClientNet(); if (typeof net.predictor?.ride === 'function') net.predictor.ride(how); else net.client.act({ kind: 'ride', seq: net.client.seq ?? 0, action: how }); }, action);
 const steer = (page, x, z, forward, sprint, swing = false) => page.evaluate(([tx, tz, y, run, hit]) => {
   const { player, game } = window.__wildshard.world;
   player.yaw = Math.atan2(-(tx - player.position.x), -(tz - player.position.z)); player.pitch = -0.15;
@@ -109,15 +111,17 @@ const CASES = {
     await goTo(bo, id, 9);
     const reached = await goTo(ana, id, 1.6);
     note('horse: Ana beside the skeleton horse', reached.away !== null && reached.away <= 1.6, { away: reached.away });
-    await ana.page.evaluate(() => window.__workerClientNet().client.act({ kind: 'ride', seq: 0, action: 'mount' }));
+    await ride(ana.page, 'mount');
     await sleep(800);
-    const mounted = await ana.page.evaluate(() => { const r = window.__workerClient(); return { x: r.serverX, z: r.serverZ }; });
+    const mounted = named(await look(bo.page), 'Ana');
     const pace = async (forward, sprint, seconds) => {
-      await ana.page.evaluate(([y, run]) => { const { player } = window.__wildshard.world; player.touchMove.x = 0; player.touchMove.y = y; player.touchSprint = run; }, [forward, sprint]);
-      await sleep((seconds - 1) * 1000);
+      const hold = () => ana.page.evaluate(([y, run]) => { const { player } = window.__wildshard.world; player.touchMove.x = 0; player.touchMove.y = y; player.touchSprint = run; }, [forward, sprint]);
+      for (const ends = Date.now() + (seconds - 1) * 1000; Date.now() < ends;) { await hold(); await sleep(150); }
+      const keep = setInterval(() => { hold().catch(() => undefined); }, 150);
       const a = await look(ana.page), b = await look(bo.page), t = Date.now();
       await sleep(1000);
       const a2 = await look(ana.page), b2 = await look(bo.page), dt = (Date.now() - t) / 1000;
+      clearInterval(keep);
       const seenByBo = (from, to) => { const p = named(from, 'Ana'), q = named(to, 'Ana'); return p?.x === undefined || q?.x === undefined ? null : Math.hypot(q.x - p.x, q.z - p.z) / dt; };
       return { own: Math.hypot(a2.bodies[id].x - a.bodies[id].x, a2.bodies[id].z - a.bodies[id].z) / dt, player: Math.hypot(a2.me.x - a.me.x, a2.me.z - a.me.z) / dt, bo: seenByBo(b, b2) };
     };
@@ -126,7 +130,7 @@ const CASES = {
     const gallop = await pace(1, true, 5);
     await both(ana, bo, 'horse-gallop');
     await stop(ana.page); await sleep(2500);
-    await ana.page.evaluate(() => window.__workerClientNet().client.act({ kind: 'ride', seq: 0, action: 'dismount' }));
+    await ride(ana.page, 'dismount');
     await sleep(1200);
     const after = await look(ana.page), off = Math.hypot(after.bodies[id].x - after.me.x, after.bodies[id].z - after.me.z);
     await both(ana, bo, 'horse-off');
@@ -144,7 +148,7 @@ const CASES = {
     await both(ana, bo, 'chameleon-far');
     await goTo(ana, id, 3);
     await sleep(800);
-    const near = { ana: (await look(ana.page)).bodies[id], bo: (await look(bo.page)).bodies[id] };
+    const anaNow = await look(ana.page), near = { gap: Math.hypot(anaNow.bodies[id].x - anaNow.me.x, anaNow.bodies[id].z - anaNow.me.z), ana: anaNow.bodies[id], bo: (await look(bo.page)).bodies[id] };
     await both(ana, bo, 'chameleon-near');
     return note('chameleon: shown and lockable inside 4 m, on both pages', near.ana?.ch[0] === 1 && near.bo?.ch[0] === 1 && near.bo?.lockable === 'on', { ana: near.ana, bo: near.bo });
   },

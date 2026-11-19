@@ -41,6 +41,13 @@ export function ws_handle():i32{store<f64>(${scratchAt},0);${body}
 return i32(load<f64>(${scratchAt}));}`;
 }
 
+/** The player's sword: an item row in the kit's melee family (the same shape Mirror Salt ships). */
+const SWING = (id, damage) => ({ cooldown: 0.08, damage, effect: null, id, range: 2.2, tags: ['actor.player', 'weapon.stranger-sword', 'dmg.melee'], width: 1.2 });
+const SWORD = { charge: 0.45, context: 'weapon.melee', family: 'kit.melee', heavy: SWING('stranger-sword.heavy', 56), hook: null, id: 'weapon.stranger-sword',
+  kind: 'weapon', light: SWING('stranger-sword.light', 28), slot: 'declared.weapon.stranger-sword',
+  ui: { blurb: 'A plain iron sword.', icon: 'sword', name: 'Iron sword', swapIcon: '\u2694' },
+  view: { colour: '#888888', position: [0.2, -0.35, -0.6], recipe: 'kit.sword', rotation: [0, 0, 0] } };
+
 /** OF25: decision handles are the shard's own catalogues (every spawn, strike and move sorted by id, format
  *  `buildDecisionRegistries`). Alone, a fixture's handles are its own; composed into the stranger shard, `compose` sets
  *  CATALOGUE from the whole shard so each guest names the same rows. */
@@ -116,6 +123,10 @@ const QUADRUPED = (() => {
   }
   return rows;
 })();
+/** CC58c: the T-Rex's tail, a trail row (format `horizontalBipedContract`): `tail1`..`tail4` off the hips, 0.8 m apart. */
+const TREX_TAIL = { count: 4, spacing: 0.8 };
+/** The horizontal biped's bones: the biped's, then the tail chain straight back from the hips (its rest pose). */
+const TREX = [...BIPED, ...Array.from({ length: TREX_TAIL.count }, (_, i) => [`tail${i + 1}`, i === 0 ? 1 : BIPED.length + i - 1, [0, 0, -TREX_TAIL.spacing]])];
 const HYDRA = [['body', -1, [0, 0.9, 0]], ['neck1', 0, [-0.8, 0.6, 0.5]], ['head1', 1, [0, 0.6, 0.3]], ['neck2', 0, [0, 0.7, 0.6]], ['head', 3, [0, 0.6, 0.3]],
   ['neck3', 0, [0.8, 0.6, 0.5]], ['head3', 5, [0, 0.6, 0.3]]];
 /** A creature skin: its GLB, the export's metadata (rig row and binding) and its `platform.skin` look. */
@@ -482,6 +493,33 @@ else if(state(0)==1&&hp<=0.5){emit(${DO.despawn},${manH},${beastH},0,0);setState
       return { a, b: { ...b, was: share } };
     },
   },
+  trex: {
+    rows() {
+      // ONE-FORMAT CC58c: the T-Rex, a horizontal biped (spine pitched forward, the tail on trail bones behind the hips) on
+      // a placeholder skin; a bite from its mouth and a tail sweep from the tail's tip (the contract's `tail` socket)
+      const body = skin('fixture.trex', TREX), row = species('fixture.trex', 'T-Rex', 400);
+      row.dims = { bodyY: 1.3, bodyHalfLen: 1.2, bodyRadius: 0.7, headRadius: 0.45, legLen: 0.95, feet: [], halfWidth: 0.8 };
+      row.body = { skeleton: 'biped', stance: 'horizontal', trail: TREX_TAIL, size: 'large', scale: 1, look: 'fixture.trex.look' };
+      row.abilities = [{ use: 'fixture.trex.bite', range: 3, cooldown: 2, weight: 1, from: 'mouth' },
+        { use: 'fixture.trex.sweep', range: 4, cooldown: 3, weight: 1, from: 'tail' }];
+      return { species: [row], looks: [body.look], scripts: [], files: body.files, blobs: [],
+        strikes: [strike('fixture.trex.bite', { shape: { kind: 'sphere', radius: 2.5 }, range: 3, tags: ['creature.bite'] }),
+          // the tail swings round from its tip: a full arc long enough to reach past the hips
+          strike('fixture.trex.sweep', { shape: { kind: 'arc', radius: 8, halfAngle: Math.PI }, range: 4, tags: ['creature.sweep'] })] };
+    },
+    witness(sim, actor, step) {
+      const strikes = count(sim);
+      step(2);
+      // the tail rides its trail behind the hips: its last volume's centre (3.5 x 0.8 back) sits well behind the body
+      const tip = centre(actor, `tail${TREX_TAIL.count}`), forward = new Vector3(Math.sin(actor.yaw), 0, Math.cos(actor.yaw));
+      const behind = -tip.clone().sub(actor.position).setY(0).dot(forward);
+      if (!(behind > (TREX_TAIL.count - 1) * TREX_TAIL.spacing)) throw new Error(`the tail does not trail behind the hips (${behind} m)`);
+      step(58);
+      const bite = strikes.get('fixture.trex.bite') ?? 0, sweep = strikes.get('fixture.trex.sweep') ?? 0;
+      if (bite === 0 || sweep === 0) throw new Error(`the T-Rex landed bite ${bite}, sweep ${sweep} in 60 s`);
+      return { behind, bite, sweep };
+    },
+  },
   horse: {
     rows() {
       // ONE-FORMAT CC40c: the skeleton horse, a plain-JSON `mount` row on the kit quadruped (a placeholder body)
@@ -552,6 +590,9 @@ async function compose(src) {
   const drops = new Set(all.species.flatMap(row => (row.harvest ?? []).map(entry => entry.item)));
   const items = read('combat/items'), catalogue = JSON.parse(readFileSync(resolve(kit, 'harvest-items.json'), 'utf8'));
   items.items.catalogue = [...(items.items.catalogue ?? []), ...catalogue.filter(row => drops.has(row.id))];
+  // a starter sword (the kit's melee family, as Mirror Salt carries it) so a player can fight the boss and the pack
+  items.items.rows = [...items.items.rows.filter(row => row.id !== SWORD.id), SWORD];
+  items.items.loadout = { ...items.items.loadout, primary: SWORD.id };
   write('combat/items', items);
   const spawns = writeRows(src, all, read, write);
   await card(src, read, write);
