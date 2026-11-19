@@ -97,6 +97,17 @@ player mounts it, walks and gallops at the row's speeds (within 5%) and
 dismounts beside it. Its `wildshard check` passes with format main; the
 staging ride waits on the releases (QA29).
 
+## CC58c: the T-Rex (`fixtures.mjs trex`)
+
+A horizontal biped (format 0.46.1 `stance: 'horizontal'` with a tail `trail` row, 4 bones 0.8 m apart) on a
+placeholder skin: the biped's bones plus `tail1`..`tail4` straight back from the hips. Size `large` (actor scale 2).
+A bite `from: 'mouth'` (the pitched head) and a tail sweep `from: 'tail'` (the tail tip socket, a full arc). It spawns
+on open ground, as the horse does: in the seed's hall a wall stands between the player and the tail's tip, and the
+sweep's line of sight is the world's. Witness: the tail's last volume sits behind the hips along the T-Rex's facing,
+and both strikes land on the player in 60 s. On 2026-11-19 (sharddev engine 0.1.48 `f7f560c5`, engine main
+`02e4eb6b3`): tail 6.4 m behind, 20 bites, 15 sweeps. It joins `compose` once the repo's SDK pin carries format 0.46.1
+(SDK 0.4.16 pins 0.45.0, which refuses the stance).
+
 ## Rerun on engine 0.1.47 (opus-of-m789, 2026-11-19)
 
 sharddev main pins engine 0.1.47 (`61fd32d2` and its fix-forward), format

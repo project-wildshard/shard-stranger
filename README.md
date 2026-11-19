@@ -22,7 +22,8 @@ like any author's shard.
 | Fixtures | orc, ogre, troll, chameleon, mech, hydra, shape-shifter; rabbit and dragonfly from `write-fixture.py` | a ring 50 to 70 m out |
 
 Jake's ten (ONE-FORMAT J367 (7)) are the dragon, T-Rex, dragonfly, chameleon, rabbit, skeleton horse, orc, ogre, troll
-and mech. Nine are here; the T-Rex is ONE-FORMAT CC58c, which waits on an engine release. Bodies are placeholder skins.
+and mech. Nine are in the shard; the T-Rex (ONE-FORMAT CC58c) is a fixture (`fixtures.mjs trex`) that joins `compose` once
+the repo's SDK pin carries format 0.46.1. Bodies are placeholder skins.
 
 ## Rebuild `src/`
 

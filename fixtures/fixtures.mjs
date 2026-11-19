@@ -503,12 +503,15 @@ else if(state(0)==1&&hp<=0.5){emit(${DO.despawn},${manH},${beastH},0,0);setState
       row.abilities = [{ use: 'fixture.trex.bite', range: 3, cooldown: 2, weight: 1, from: 'mouth' },
         { use: 'fixture.trex.sweep', range: 4, cooldown: 3, weight: 1, from: 'tail' }];
       return { species: [row], looks: [body.look], scripts: [], files: body.files, blobs: [],
+        // open ground, clear of the seed's hall: a wall between the player and the tail's tip blocks the sweep, as it should
+        spawns: [{ id: 'fixture.trex', species: 'fixture.trex', yaw: Math.PI, at: [-100, 0, 100] }],
         strikes: [strike('fixture.trex.bite', { shape: { kind: 'sphere', radius: 2.5 }, range: 3, tags: ['creature.bite'] }),
           // the tail swings round from its tip: a full arc long enough to reach past the hips
-          strike('fixture.trex.sweep', { shape: { kind: 'arc', radius: 8, halfAngle: Math.PI }, range: 4, tags: ['creature.sweep'] })] };
+          strike('fixture.trex.sweep', { shape: { kind: 'arc', radius: 8, halfAngle: Math.PI }, range: 8, tags: ['creature.sweep'] })] };
     },
     witness(sim, actor, step) {
-      const strikes = count(sim);
+      const strikes = count(sim), player = sim.host.focusedPlayer;
+      player.resetPose({ x: actor.position.x, y: actor.position.y, z: actor.position.z - 8 }, 0);
       step(2);
       // the tail rides its trail behind the hips: its last volume's centre (3.5 x 0.8 back) sits well behind the body
       const tip = centre(actor, `tail${TREX_TAIL.count}`), forward = new Vector3(Math.sin(actor.yaw), 0, Math.cos(actor.yaw));
