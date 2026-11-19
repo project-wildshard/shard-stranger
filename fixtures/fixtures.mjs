@@ -639,10 +639,13 @@ async function card(src, read, write) {
   writeFileSync(resolve(src, 'shard.json'), `${JSON.stringify(index)}\n`);
   const words = { biome: 'Stranger fixtures', blurb: 'A skeleton horse to ride, a dragon to fight, a wolf pack and a deer herd, and every fixture of the one format.' };
   const look = read('look/look'), hashes = Object.fromEntries(Object.entries(urls).map(([slot, url]) => [slot, url.replace(/^.*\/(\w{64})\.jpg$/u, '$1')]));
-  look.presentation = { ...look.presentation, ...words, card: { ...look.presentation.card, ...hashes } };
+  // Brasscap's seed (J434) keeps its card on the manifest and the discovery mount only; Template 2 also had `presentation`
+  look.presentation = { ...look.presentation, ...words, card: { ...look.presentation?.card, ...hashes } };
   // The mech's plates and the hydra's heads hang meshes in material `toon`; the client compiles attachment materials from
-  // this registry and refuses an absent one (engine clientAttachments.ts), though the server sims never draw them.
-  look.look.materials.toon ??= { ...look.look.materials.door, colour: [0.55, 0.57, 0.6], metalness: 0.6, roughness: 0.5, vertexColours: false };
+  // this registry and refuses an absent one (engine clientAttachments.ts), though the server sims never draw them. It is
+  // written whole: the seed's own materials are its place's (Template 2's `door` is gone with it).
+  look.look.materials.toon ??= { alphaCutoff: 0, colour: [0.55, 0.57, 0.6], doubleSided: false, envStrength: 1, faceted: true, family: 'pbr', ground: null,
+    maps: { colour: null, normal: null, orm: null }, measure: null, metalness: 0.6, normalScale: 1, occlusion: 1, roughness: 0.5, vertexColours: false };
   write('look/look', look);
   const level = read('ui/level');
   level.manifest = { ...level.manifest, ...words, card: urls };
