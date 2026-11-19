@@ -48,6 +48,19 @@ const SWORD = { charge: 0.45, context: 'weapon.melee', family: 'kit.melee', heav
   ui: { blurb: 'A plain iron sword.', icon: 'sword', name: 'Iron sword', swapIcon: '\u2694' },
   view: { colour: '#888888', position: [0.2, -0.35, -0.6], recipe: 'kit.sword', rotation: [0, 0, 0] } };
 
+/** OF25 (the boss): the dragon flies at 6 m until half its hp is gone, out of a sword's reach, so the player starts with a
+ *  lever-action (the kit's `kit.lever` family, the shape Brasscap ships) to bring it down; the sword is the second slot. A
+ *  kit lever is in hand only as the loadout's primary (no rack here). */
+const ROUND = (id) => ({ cooldown: 0.68, damage: 25, effect: null, id, range: 1, tags: ['actor.player', 'weapon.stranger-lever', 'dmg.ranged'], width: 0.1 });
+const LEVER = { charge: 1, context: 'stranger.lever', family: 'kit.lever', heavy: ROUND('stranger-lever.round-heavy'), hook: null, id: 'weapon.stranger-lever',
+  kind: 'weapon', light: ROUND('stranger-lever.round'),
+  profile: { action: 'lever', autoReload: 0.35, bloomMax: 0, bloomShot: 0, damageScale: 1, family: 'firearm', interval: 0.68,
+    lever: { autoReloadClose: 5, cockAt: 0.2, cycleDelay: 0.12, cycleTime: 0.56, ejectAt: 0.34, reloadIn: 0.22, reloadOut: 0.2 }, magazine: 6, movingAimReduction: 0,
+    movingSpread: 0, projectile: { delivery: 'hitscan', flight: { drag: 0, gravity: 0, windCoupling: 0 }, kind: 'bullet', lifetime: 1, pool: 1, radius: 0, speed: 0, substeps: 1 },
+    range: 120, reload: 0.4, reloadMode: 'perRound', reserve: 60, spreadAds: 0, spreadHip: 0.9, spreadRadius: 'sqrt' },
+  slot: 'declared.weapon.stranger-lever', ui: { blurb: 'Six in the tube, loaded one round at a time.', icon: 'lever', name: 'Lever-action', swapIcon: '\u2310' },
+  view: { colour: '#8a5a2b', position: [0.19, -0.22, -0.56], recipe: 'kit.rifle', rotation: [0, 0, 0] } };
+
 /** OF25: decision handles are the shard's own catalogues (every spawn, strike and move sorted by id, format
  *  `buildDecisionRegistries`). Alone, a fixture's handles are its own; composed into the stranger shard, `compose` sets
  *  CATALOGUE from the whole shard so each guest names the same rows. */
@@ -593,9 +606,12 @@ async function compose(src) {
   const drops = new Set(all.species.flatMap(row => (row.harvest ?? []).map(entry => entry.item)));
   const items = read('combat/items'), catalogue = JSON.parse(readFileSync(resolve(kit, 'harvest-items.json'), 'utf8'));
   items.items.catalogue = [...(items.items.catalogue ?? []), ...catalogue.filter(row => drops.has(row.id))];
-  // a starter sword (the kit's melee family, as Mirror Salt carries it) so a player can fight the boss and the pack
-  items.items.rows = [...items.items.rows.filter(row => row.id !== SWORD.id), SWORD];
-  items.items.loadout = { ...items.items.loadout, primary: SWORD.id };
+  // a starter sword (the kit's melee family, as Mirror Salt carries it) for the pack, and a lever-action for the flying dragon
+  items.items.rows = [...items.items.rows.filter(row => row.id !== SWORD.id && row.id !== LEVER.id), SWORD, LEVER];
+  items.items.loadout = { ...items.items.loadout, primary: LEVER.id };
+  // the lever's input context, as Brasscap declares its own: attack, aim and reload, keys from the ranged baseline
+  items.items.contexts = [...(items.items.contexts ?? []).filter(row => row.id !== LEVER.context),
+    { actions: ['attack', 'aim', 'reload'], id: LEVER.context, keysFrom: 'weapon.ranged', lockable: false, touch: 'ranged' }];
   write('combat/items', items);
   const spawns = writeRows(src, all, read, write);
   await card(src, read, write);

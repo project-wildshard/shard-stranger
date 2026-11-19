@@ -8,6 +8,7 @@
 //   chameleon  faded (channel 0.1, not lockable) until a player is inside 4 m, then shown (1, lockable) on both pages
 //   mech       a player's blows break an armour plate: its channel reads 1 on both pages
 //   horse      Ana mounts the skeleton horse, walks and gallops it, and gets off beside it; Bo sees her ride
+//   boss       both shoot the flying dragon with the lever until its hp gate lands it, then fight on with swords
 // J205: staging or preview only, never production. Headless and muted, 60 fps cap.
 //   node proofs/staging-probe.mjs <engine checkout> <out dir> [--base=https://staging.wildshard.io] [--cases=wolves,deer,chameleon,mech,horse]
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -19,7 +20,7 @@ const flag = (name, fallback) => process.argv.find(arg => arg.startsWith(`--${na
 if (engineDir === undefined || outDir === undefined) throw new Error('usage: staging-probe.mjs <engine checkout> <out dir> [--base=…] [--cases=…]');
 const base = flag('base', 'https://staging.wildshard.io').replace(/\/$/u, '');
 if (!/^https:\/\/(staging|preview)\.wildshard\.io$/u.test(base)) throw new Error('--base takes staging or preview only (J205)');
-const cases = flag('cases', 'horse,chameleon,deer,wolves,mech').split(',').filter(Boolean), slug = flag('slug', 'stranger');
+const cases = flag('cases', 'horse,chameleon,deer,wolves,mech,boss').split(',').filter(Boolean), slug = flag('slug', 'stranger');
 const at = file => import(pathToFileURL(resolve(engineDir, 'scripts', file)).href);
 const { chromium, webkit } = await at('browser-playwright.mjs');
 const { KEYCHAIN_ARGS } = await at('chromium-keychain.mjs');
@@ -92,6 +93,8 @@ const steer = (page, x, z, forward, sprint, swing = false, pitch = -0.15) => pag
   player.touchMove.x = 0; player.touchMove.y = y; player.touchSprint = run;
   if (hit) game.app.input.press('attack');
 }, [x, z, forward, sprint, swing, pitch]);
+/** Take a weapon into hand by its row (revision 4: the lever is the primary, the sword the second slot). */
+const hold = (page, id) => page.evaluate(row => { window.__wildshard.world.game.app.equipment?.select(row, true); }, id);
 const stop = page => page.evaluate(() => { const { player } = window.__wildshard.world; player.touchMove.x = 0; player.touchMove.y = 0; player.touchSprint = false; });
 /** Walk `who` to within `near` m of creature `id` (as its own page draws it). A straight line can meet a wall (the seed's
  *  hall stands between the spawn and the mech): with under half a metre gained in 2.5 s it walks 7 m aside, alternating
@@ -195,6 +198,7 @@ const CASES = {
     return note('deer: a hind bolts, on both pages', fled !== null, fled ?? undefined);
   },
   async wolves(ana, bo) {
+    await hold(ana.page, 'weapon.stranger-sword'); await hold(bo.page, 'weapon.stranger-sword');
     // the pack stands again 30 s after it falls (stranger revision 3): wait for it
     let start = await look(bo.page), ids = idsOf(start, 'kit.creature.wolf');
     for (const ends = Date.now() + 45_000; Date.now() < ends && !ids.every(id => start.bodies[id]?.alive === true);) { await sleep(1000); start = await look(bo.page); }
@@ -237,7 +241,61 @@ const CASES = {
     note('wolves: the pack hunts together (assist), seen on both pages', assist.size >= 2 && seenOnBoth.size >= 2, { hunting: [...assist], onBoth: [...seenOnBoth] });
     return note('wolves: both players land hits', landed.Ana > 0 && landed.Bo > 0, { landed, swings, closest: close });
   },
+  async boss(ana, bo) {
+    // the dragon flies at 6 m until half its hp is gone (the encounter's gate), so both shoot it with the lever from inside
+    // its arena, one at a time so each blow is that player's; then it lands and they close in with swords
+    const [id] = idsOf(await look(bo.page), 'fixture.dragon'), MIDDLE_Y = 1.2;
+    const seenBy = async () => ({ a: (await look(ana.page)).bodies[id], b: (await look(bo.page)).bodies[id] });
+    const start = await seenBy();
+    note('boss: the dragon stands, on both pages', start.a?.alive === true && start.b?.alive === true, start);
+    const landed = { Ana: 0, Bo: 0 }, ground = start.a?.y ?? 0;
+    let high = 0;
+    const shoot = async (who, seconds, until) => {
+      await hold(who.page, 'weapon.stranger-lever');
+      const hits0 = (await look(who.page)).me.hits;
+      for (const ends = Date.now() + seconds * 1000; Date.now() < ends;) {
+        const seen = await look(who.page), body = seen.bodies[id];
+        if (body === undefined || body.alive !== true) break;
+        high = Math.max(high, body.y - ground);
+        const away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z);
+        if (away > 16) { await goTo(who, id, 12, 10); continue; }
+        const pitch = Math.atan2(body.y + MIDDLE_Y - (seen.me.y + 1.68), Math.max(0.3, away));
+        await steer(who.page, body.x, body.z, 0, false, true, pitch);
+        await sleep(400);
+        landed[who.name] = (await look(who.page)).me.hits - hits0;
+        if (until(body)) break;
+      }
+      await stop(who.page);
+    };
+    await goTo(bo, id, 12, 90); await goTo(ana, id, 12, 90);
+    await shoot(bo, 25, () => landed.Bo >= 2);
+    await shoot(ana, 60, body => body.hp < 200);
+    await shoot(bo, 40, body => body.hp < 200);
+    await both(ana, bo, 'boss-air');
+    let down = null;
+    for (const ends = Date.now() + 15_000; Date.now() < ends && down === null;) {
+      const now = await seenBy();
+      if (now.a !== undefined && now.b !== undefined && now.a.y - ground < 0.8 && now.b.y - ground < 0.8 && now.a.hp < 200) down = now;
+      else await sleep(500);
+    }
+    // on the ground: both close in with swords for a while (the fight, not necessarily the kill)
+    for (const who of [ana, bo]) await hold(who.page, 'weapon.stranger-sword');
+    for (const ends = Date.now() + 20_000; Date.now() < ends;) {
+      for (const who of [ana, bo]) {
+        const seen = await look(who.page), body = seen.bodies[id]; if (body === undefined || body.alive !== true) continue;
+        const away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z);
+        await steer(who.page, body.x, body.z, away > 2 ? 1 : 0, false, away < 3.2, aimAt(seen, { ...body, species: 'fixture.dragon' }));
+      }
+      await sleep(250);
+    }
+    for (const who of [ana, bo]) await stop(who.page);
+    await both(ana, bo, 'boss-ground');
+    const end = await seenBy();
+    note('boss: the dragon flew, and both players\' shots hit it', high > 2.5 && landed.Ana > 0 && landed.Bo > 0, { high, landed });
+    return note('boss: its hp gate lands it, on both pages', down !== null, down ?? { end, high, landed });
+  },
   async mech(ana, bo) {
+    await hold(ana.page, 'weapon.stranger-sword');
     const [id] = idsOf(await look(bo.page), 'fixture.mech');
     await goTo(bo, id, 14);
     await goTo(ana, id, 2.2, 90);
