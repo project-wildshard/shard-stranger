@@ -218,6 +218,8 @@ const CASES = {
         const target = aim !== null && alive.includes(aim) ? aim : alive.sort((p, q) => Math.hypot(seen.bodies[p].x - seen.me.x, seen.bodies[p].z - seen.me.z) - Math.hypot(seen.bodies[q].x - seen.me.x, seen.bodies[q].z - seen.me.z))[0];
         if (target === undefined) { await sleep(500); continue; }
         if (target !== aim) { aim = target; hp = seen.bodies[target].hp; }
+        // far off (a wall between, or the pack ran after the other player): walk there the way goTo does, round walls
+        if (Math.hypot(seen.bodies[target].x - seen.me.x, seen.bodies[target].z - seen.me.z) > 4) { await goTo(who, target, 3, 10); continue; }
         const body = seen.bodies[target], away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z), swing = away < 2.3;
         close[who.name] = Math.min(close[who.name], away); if (swing) swings[who.name]++;
         await steer(who.page, body.x, body.z, away > 1.4 ? 1 : 0, false, swing, aimAt(seen, body));
