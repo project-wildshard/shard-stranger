@@ -70,11 +70,11 @@ const look = page => page.evaluate(() => {
   if (net?.latest) for (const [handle, info] of net.entities) {
     const f = net.fields(net.latest, handle), species = info.initial?.species || info.initial?.kind || f?.species;
     if (f === null || f === undefined || typeof species !== 'string') continue;
-    bodies[info.id] = { species, x: Number(f.x), z: Number(f.z), state: f.state ?? null, hp: f.hp ?? null, alive: f.alive ?? null,
+    bodies[info.id] = { species, x: Number(f.x), y: Number(f.y), z: Number(f.z), state: f.state ?? null, hp: f.hp ?? null, alive: f.alive ?? null,
       ch: [f.channel1, f.channel2, f.channel3, f.channel4], lockable: f.lockable ?? null, target: f.target ?? null };
   }
   const report = window.__workerClient();
-  return { me: { x: player.position.x, z: player.position.z, hp: report.hp, falls: report.falls }, bodies,
+  return { me: { x: player.position.x, y: player.position.y, z: player.position.z, hp: report.hp, falls: report.falls, hits: report.hits }, bodies,
     others: (window.__onlinePlayers?.() ?? []).map(other => ({ name: other.name, x: other.x, z: other.z, speed: other.speed, mounted: other.mounted })) };
 });
 /** The server ids of `species`, in id order (the same on every page). */
@@ -82,12 +82,16 @@ const idsOf = (seen, species) => Object.keys(seen.bodies).filter(id => seen.bodi
 const named = (seen, who) => seen.others.find(other => other.name.startsWith(who));
 /** Get on or off through the page's own ride press (it carries the live command seq). */
 const ride = (page, action) => page.evaluate(how => { const net = window.__workerClientNet(); if (typeof net.predictor?.ride === 'function') net.predictor.ride(how); else net.client.act({ kind: 'ride', seq: net.client.seq ?? 0, action: how }); }, action);
-const steer = (page, x, z, forward, sprint, swing = false) => page.evaluate(([tx, tz, y, run, hit]) => {
+/** Where a blow aims on each body, above its feet: the species' `bodyY` (its middle), the mech's chest plates. A kit blow
+ *  is judged from the server's eye (1.68 m) along this look, so a level look passes over a wolf's back at arm's length. */
+const MIDDLE = { 'kit.creature.wolf': 0.72, 'kit.creature.deer': 0.92, 'fixture.mech': 1.4 };
+const aimAt = (seen, body) => Math.atan2((body.y + (MIDDLE[body.species] ?? 1)) - (seen.me.y + 1.68), Math.max(0.3, Math.hypot(body.x - seen.me.x, body.z - seen.me.z)));
+const steer = (page, x, z, forward, sprint, swing = false, pitch = -0.15) => page.evaluate(([tx, tz, y, run, hit, look]) => {
   const { player, game } = window.__wildshard.world;
-  player.yaw = Math.atan2(-(tx - player.position.x), -(tz - player.position.z)); player.pitch = -0.15;
+  player.yaw = Math.atan2(-(tx - player.position.x), -(tz - player.position.z)); player.pitch = look;
   player.touchMove.x = 0; player.touchMove.y = y; player.touchSprint = run;
   if (hit) game.app.input.press('attack');
-}, [x, z, forward, sprint, swing]);
+}, [x, z, forward, sprint, swing, pitch]);
 const stop = page => page.evaluate(() => { const { player } = window.__wildshard.world; player.touchMove.x = 0; player.touchMove.y = 0; player.touchSprint = false; });
 /** Walk `who` to within `near` m of creature `id` (as its own page draws it). A straight line can meet a wall (the seed's
  *  hall stands between the spawn and the mech): with under half a metre gained in 2.5 s it walks 7 m aside, alternating
@@ -208,18 +212,19 @@ const CASES = {
     };
     // One fighter at a time, so a wolf's lost hp is that fighter's blow: Bo first (the phone), then Ana. The other stands.
     const fight = async (who, seconds) => {
-      let aim = null, hp = null;
+      let aim = null, hp = null; const hits0 = (await look(who.page)).me.hits;
       for (const ends = Date.now() + seconds * 1000; Date.now() < ends && landed[who.name] === 0;) {
         const seen = await look(who.page), alive = ids.filter(id => seen.bodies[id]?.alive === true);
         const target = aim !== null && alive.includes(aim) ? aim : alive.sort((p, q) => Math.hypot(seen.bodies[p].x - seen.me.x, seen.bodies[p].z - seen.me.z) - Math.hypot(seen.bodies[q].x - seen.me.x, seen.bodies[q].z - seen.me.z))[0];
         if (target === undefined) { await sleep(500); continue; }
         if (target !== aim) { aim = target; hp = seen.bodies[target].hp; }
-        const body = seen.bodies[target], away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z), swing = away < 2.6;
+        const body = seen.bodies[target], away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z), swing = away < 2.3;
         close[who.name] = Math.min(close[who.name], away); if (swing) swings[who.name]++;
-        await steer(who.page, body.x, body.z, away > 1.6 ? 1 : 0, false, swing);
+        await steer(who.page, body.x, body.z, away > 1.4 ? 1 : 0, false, swing, aimAt(seen, body));
         await sleep(250);
-        const b = await watch(), now = b.bodies[target]?.hp;
-        if (typeof now === 'number' && typeof hp === 'number' && now < hp) { landed[who.name]++; hp = now; }
+        const b = await watch(), now = b.bodies[target]?.hp, mine = (await look(who.page)).me.hits;
+        // a hit is the server's confirmation of this player's own blow (the page's report), or the wolf's hp falling
+        if (mine > hits0 || (typeof now === 'number' && typeof hp === 'number' && now < hp)) { landed[who.name]++; hp = now; }
       }
       await stop(who.page);
     };
@@ -239,7 +244,7 @@ const CASES = {
       const seen = await look(ana.page), body = seen.bodies[id];
       if (body === undefined) break;
       const away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z);
-      await steer(ana.page, body.x, body.z, away > 2.4 ? 1 : 0, false, away < 4.5);
+      await steer(ana.page, body.x, body.z, away > 1.6 ? 1 : 0, false, away < 2.4, aimAt(seen, body));
       await sleep(300);
       const [a, b] = [await look(ana.page), await look(bo.page)];
       const plate = [0, 1, 2, 3].find(i => a.bodies[id]?.ch[i] === 1 && b.bodies[id]?.ch[i] === 1);
