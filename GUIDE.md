@@ -90,6 +90,7 @@ with `rule`, `fix` and `guide`) for agents and scripts.
 | `wildshard content <folder> [--bar templates]` | Count the content in a built shard; the template bar lists every shortfall. `--bar=templates` also works |
 | `wildshard hero <source> --base <url>` | Capture the hero from a served build and stamp `hero.json`. `--stamp-existing` marks the images already there as current: only when you have looked at them and they show the current world |
 | `wildshard upload <file> --channel staging\|prod` | Send a prepared shard file to the API (section 5) |
+| `wildshard migrate --dry-run <file>` | Ask the API what admission would do with a shard file, storing nothing: its format against the API's, the migrations it would run, deprecations, the chain id and the digest it would record (`--server` or `WILDSHARD_API_URL`) |
 | `wildshard account <email>` | Make your account once and save its key, which upload sends (see "Uploading", step 5) |
 | `wildshard whoami` | Say which account key upload would send (from `WILDSHARD_API_KEY` or the key file), show its first characters, and print its account's email and how many slugs it owns (`--server` or `WILDSHARD_API_URL`) |
 | `wildshard grid [--channel staging\|prod\|preview]` | Print the world grid on a channel: each taken cell and its shard, then the free cells. No key needed (section 5) |
@@ -108,8 +109,8 @@ with `rule`, `fix` and `guide`) for agents and scripts.
 ### Walking your shard
 
 `wildshard dev .` walks the shard on your machine: it serves the shard on localhost and reloads the page when you
-save (section 4). Open the URL it prints; it ends in `?skipintro`, which walks straight into your shard. Ctrl-C stops
-it and frees the port.
+save (section 4). The first URL ends in `?skipintro` and walks straight into your shard. The second opens `?explore=world`
+for flying and model inspection. `wildshard watch .` prints both URLs too. Ctrl-C stops the server and frees the port.
 
 The first run fetches engine's dev client once, from the engine release at this sdk's engine pin, into
 `~/.cache/wildshard/dev-client/` (about 300 MB; `$WILDSHARD_DEV_CLIENT_CACHE` moves it). Later runs, and every project
@@ -194,7 +195,8 @@ shard file with no captured hero or the generated card (`hero-missing`) and a ca
 (`hero-size`). Section 6 has every hero refusal.
 
 **A curated hero** is hand-picked art, not a capture. Put `"curated": true` in `hero.json` and the art is kept: after a
-content change, `wildshard hero . --stamp-existing` re-stamps the images already there, and `wildshard hero . --base`
+content change, `wildshard build` re-stamps `hero.json` itself when the images are the stamped ones (commit the new
+stamp), `wildshard hero . --stamp-existing` re-stamps swapped images, and `wildshard hero . --base`
 refuses rather than shoot the spawn view over them. A new version still needs a new picture (`hero-unchanged`): swap
 the art, then `--stamp-existing`. Remove `curated` to capture again.
 
@@ -204,7 +206,7 @@ A staging MMO page keeps authoritative quests and creatures in its worker client
 a Playwright proof (the same reader serves local `wildshard dev`):
 
 ```js
-import { readProofState } from '@wildshard/engine/scripts/proof-state.mjs';
+import { readProofState } from '@wildshard/sdk/headless/scripts/proof-state.mjs';
 const state = await page.evaluate(readProofState, { creatureKinds: ['boar'] });
 if (!state) throw new Error('Enter the shard before reading gameplay');
 console.log(state.quest.flags, state.quest.quests, state.creatures, state.seat);
@@ -475,6 +477,24 @@ under your slug; J434 made it the starter). It is the same shard format as secti
 writes the rest. `wildshard check .` builds it, `wildshard watch .` shows each saved edit in a running page, and
 `wildshard synth` is not for it (synth takes the older scene form only).
 
+**Mossgate's files: a file per region, a section per mechanic (MZ25).** The starter is a whole zone, and each file is
+under 400 lines, so a region or a mechanic is one file to read and one to change:
+
+| File | What it holds |
+|---|---|
+| `generators/layout.ts` | The cell map: the six regions round the yard, the twelve places, the entry roads and the paths |
+| `generators/ground.ts`, `hollow.ts` | The ground over the 500 m cell, each region's relief and tint; the yard's `LAYOUT` and the pond's shape |
+| `generators/world.ts` | The scene's order: the light, the ground and every yard part (`buildMossgate`) |
+| `generators/kit.ts` | Shared materials and builders: blocks, moss caps, drapes, ivy, lanterns, halos, colliders, stencils |
+| `generators/yard.ts`, `garden.ts` | The Hollow yard: walls, paths, braziers, hut, crate, signpost, moss gate, the Lamplighter; the pond, trees, boulders, ferns, grass, fireflies |
+| `generators/meadow.ts`, `thicket.ts`, `bog.ts`, `quarry.ts`, `ridge.ts`, `downs.ts`, `ring.ts` | One region each: Mossling Meadow, Greyback's Thicket, the Bog, the Old Quarry, Lookout Ridge, the Barrow Downs and its ring |
+| `generators/places.ts` | The twelve places as region triggers and fingerposts |
+| `generators/cover.ts` | Each region's ground cover, one detail layer a region: flowers, ferns, reeds, pale grass, rubble, heather |
+| `generators/play.ts` | What the player uses: braziers, gates, lever, chest, rack, lift, and the order every part is built in (`buildHollow`) |
+| `generators/creatures.ts`, `fights.ts`, `behaviour/*.as` | Bodies and camps; brains, packs, encounters and the boss and elite decision scripts |
+| `generators/quests.ts`, `gameplay.ts` | The main chain, the side quests, the talks and the achievements (`extend`) |
+| `generators/finds.ts` | The lamp-glass set, the cairn's chest, the lore signs |
+
 **Which files a scene shard keeps.** Only `src/shard.config.ts` and the modules it imports. `--template scene` writes
 four: `shard.config.ts`, `identity.json` (slug, name, author, revision, seed), `generators/shard.ts` (`defineShard`)
 and `generators/world.ts` (the scene), with `generators/sky.ts` and `generators/textures.ts` beside it. To turn a repo
@@ -527,14 +547,72 @@ side, as `h = lerp(h, 0, smooth(186, 197, r) * (1 - smooth(9, 18, Math.min(Math.
 | `world.interact(id, object, { label, radius, scene })` | A use prompt that runs a shard scene |
 | `world.interact(id, object, { label, radius, sets })` | A use prompt that sets a state field, no script needed: `sets: { field, scope: 'shared' \| 'player', value }` or `{ field, scope, add, max }` (a count). A shared use's prompt goes once the field holds what it would write |
 | `world.part(name, build, { panel, shownWhen: { field, equals } })` | A panel shown (and solid) only while a field a `sets` prompt writes holds `equals`: a shrine's flame once it is lit. A `player` field's panel is that player's alone (their socket): never solid, and shown on their page by an engine with SHARD-SOURCE SS-GF1a2 |
-| `world.part(name, build, { panel, vehicle: { speed, turn?, boost?, accel?, ground?, heading?, seat?, wind?: { toward: [x, z], push }, board?, leave? } })` | A vehicle a player boards and steers: a land-sail. Forward goes, back brakes, sprint (Shift; a phone's stick pushed all the way) boosts, the wind pushes it along its heading; its board and leave prompts ride with it; its solids are its hull, which stops players on foot but not its rider (engine 3165a100 and later). Its solids block nobody. Needs an engine with SHARD-SOURCE SS-MS2a3 |
+| `world.vehicle(kind, build, { speed, ... })`, `world.dock(id, object, { kind, per?, respawn? })` | A vehicle kind players get into, drive and leave, and where one stands (format `world/vehicles`); see *Vehicles* below. `world.part`'s old `vehicle` option is refused |
 | `world.pickup(id, at, { label, radius, item: { id: 'tool.<name>', name, colour?, intensity?, fuelSeconds? }, flag? })` | A lantern on a stand: using its prompt puts the tool in the player's kit lit and full, and raises `flag`; a later use refills it. The sdk writes the tool, the take and the fields that show its light. Two pickups may hand over one tool (same options). Needs an engine with SHARD-SOURCE SS-GF1a1a |
 | `world.detail(id, instancedMesh, { cell, radius })` | Grass and small clutter the engine scatters near the camera |
+| `world.music({ day, night?, boss? })`, `world.ambience({ winds })` | The shard's score from the engine's own piano slots (`title`, `island`, `pine`; no audio bytes, J304), by day, by night and while a boss fights, and a synth wind bed; either ends the scene's default silence, so quest steps are heard (format `audio`) |
 | `world.spawnAt(id, object, { species, variant, brain, strike, seed, scale, rank?, count?, when? })` | A creature spawn row (`creatures.spawns`) at `object`'s world position, facing its +z; a boss is a spawn its encounter names by `id` |
 | `world.creature(id, group, { species, size, scale?, skeleton?, volumes?, lock?, hits?, clips?, loops, material, materials?, family?, sockets?, attackSpan?, strikes? })` | A whole creature from a `Group` of named bone nodes built outside `world.scene`: its skinned GLB rig (each mesh rides its nearest bone, `clips` kept; one skinned mesh, a primitive per material, at most 8 materials), its skin in the library, the species row `id` and look `<id>.look`, and `strikes`, the strike rows its abilities name; 64 bones at most, at most 32 `sockets` (default every bone). Place it with `world.spawnAt(…, { species: id, … })`. The build also writes its phone mesh (half the vertices within 1% of its radius; the shard file option `creaturePhone` tunes it, `false` skips it), which the phone tier draws from the same clips; `wildshard content` lists its bones and both triangle counts |
 
 From `@wildshard/sdk/scene/author`: `solid` (collides), `paint` (a texture from a function), `Water` (a water
 surface), and `animate` with `flicker`, `pulse`, `drift`, `rise`, `sway` and `uvScroll`.
+
+**Vehicles.** A vehicle is a *kind* (`world.vehicle`) and the *docks* it stands at (`world.dock`), written as the
+shard's `world/vehicles` section (MIRROR-SALT-ZONE MSZ1 to MSZ5; `src/shards/vehicles/` is the worked example).
+
+```ts
+import * as THREE from 'three';
+import { solid, type ShardWorld } from '@wildshard/sdk/scene/author';
+
+const red = new THREE.MeshStandardMaterial({ color: '#b5402a' });
+
+/** Built about its own origin, its base at y 0, facing -z. */
+function buggy(part: THREE.Group): void {
+  const tub = solid(new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.7, 3.4), red));
+  tub.position.set(0, 0.75, 0);
+  part.add(tub);
+  const driver = new THREE.Object3D();
+  driver.name = 'seat.driver';
+  driver.position.set(-0.45, 0.9, 0.3);
+  const passenger = new THREE.Object3D();
+  passenger.name = 'seat.passenger';
+  passenger.position.set(0.45, 0.9, 0.3);
+  part.add(driver, passenger);
+}
+
+export function build(world: ShardWorld): void {
+  world.vehicle('salt.buggy', buggy, { speed: 22, reverse: 6, accel: 9, grip: 0.8, labels: { drive: 'Drive the buggy' } });
+  const yard = new THREE.Object3D();
+  yard.position.set(-6, 0, 20);
+  world.scene.add(yard);
+  world.dock('yard.buggy', yard, { kind: 'salt.buggy' });
+}
+```
+
+- **Seats.** Empties named `seat.driver` (exactly one) and `seat.passenger` (or `seat.passenger.2`, up to four seats in
+  all) are where riders sit; `pose: 'stand'` stands them (a sail's deck). `leave.driver` and `leave.passenger` are where
+  getting out sets them down; without one, a rider steps out 0.8 m past the side they sit on.
+- **Hull.** The kind's `solid()` meshes, at most 16 boxes each at most 8 m from its centre to a face: they ride the
+  vehicle and stop anyone on foot, never its riders. A kind's panel is written hidden: the engine poses it at each dock.
+- **Handling, and what the numbers feel like.** `speed` is the top speed in m/s (a run is 6, the hoverboard 14, a buggy
+  20 to 25, at most 60); `reverse` its top speed backwards (default the lesser of 6 and `speed`); `accel` how fast it
+  gets there (default 6 m/s²: 0 to 22 m/s in under 4 s at 9) and `brake` how fast it stops (default twice `accel`);
+  `turn` the radians a second at full stick (default 1.2: a full circle in about 5 s); `grip` from 0 (ice) to 1 (rails,
+  default 0.9) and `drift` how long a slide lasts (0 to 1, default 0.3); `boost` the sprint multiplier (1 to 4, default
+  1.5); `mass` in kg (default 500), which decides who gives way in a crash; `ground: false` keeps it at its dock's height
+  (a boat on still water); `wind: { toward: [x, z], push }` pushes a sail up to `push` m/s along its heading.
+- **Surface grip.** `world.vehicleSurface({ base, patches })` multiplies the kind's grip under the vehicle. A patch is a
+  `{ shape: 'circle', at: [x, z], radius, grip }` or a `{ shape: 'road', line: [[x, z], ...], width, grip }`. Use cell-local
+  metres and multipliers between 0 and 1. The last covering patch wins, so list a road after a flood to keep the road's grip.
+- **Docks.** `world.dock(id, object, { kind })` stands one at `object`'s world position, facing its -z. `per: 'player'`
+  (the default) gives each player their own, gone 60 s after they leave it; `per: 'shared'` parks one for everyone.
+  `respawn` (default 60 s) is how soon it comes back. A dock stands on the ground, clear of solids, with every leave
+  point on the ground and outside its hull, or the build (and `wildshard check`) refuses it.
+- **Sounds and health.** `sounds: { loop, skid, impact, horn }` name `audio.cues` ids; `health` (1 to 100,000) lets
+  crashes wear it down. `labels: { drive, ride, leave }` word its prompts.
+- **Limits.** At most 8 kinds and 32 docks a shard. `wildshard content` counts kinds, seats and docks. Driving needs an
+  engine that reads `world/vehicles` (MSZ6 and later); until its vehicle runtime (MSZ8) it runs each dock as a one-seat
+  steer carry.
 
 **Items and quests.** Every player starts with the Template's iron sword (`weapon.sword-iron`), so a scene shard
 needs no item rows to fight. To add quests, items or any other section, pass `{ extend: (shard) => ({ ...shard,
@@ -682,9 +760,11 @@ const quest = { id: 'honey-badger', title: 'The honey badger', track: true, comp
 const badgerDead: Shardfile['quests']['triggers'][number] = { id: 'badger-dead', kind: 'death', flag: 'wren.badger-dead', tag: 'creature.badger' };
 
 // 5. Loot: a `trophies` table rolls items on each kill, matched by the creature's `kind`; a `coins` table would pay
-//    coins the same way. The rest of the economy row is empty: no effects, goods, grants, finds or map marks.
+//    coins the same way. `currency` names the shard's coin: what it is called, the pickup a kill bursts and the Bag
+//    icon. The rest of the economy row is empty: no effects, goods, grants, finds or map marks.
 const loot: Shardfile['rows']['loot'][number] = { id: 'wren.loot', gear: 'purse.coins', finds: null, marks: null, charted: false, chime: 'coin',
   economy: {
+    currency: { id: 'coin', name: 'Coin', model: 'shared/doubloon', icon: 'coin' },
     tables: [{ id: 'badger.trophies', domain: 'trophies', table: { mode: 'weighted', rows: [{ item: 'honeycomb', weight: 1, count: 1, match: { kind: 'badger' } }] } }],
     effects: [], goods: [], grants: { player: [], worn: [], weapons: [] }, finds: { counters: [], sections: [] }, marks: [],
   } };
@@ -886,6 +966,11 @@ A shard that still keeps a species program (`actors/species-programs`) moves to 
 `speciesProgramToRows` from `@wildshard/sdk/species/toRows`: each species keeps its numbers, its declared brain
 becomes a `creatures.brains` row its temperament names, and strike fields a plain row cannot hold are listed.
 
+**A whole shard written this way:** [`project-wildshard/shard-stranger`](https://github.com/project-wildshard/shard-stranger)
+is a hand-written shard file with no SDK at runtime: plain species, strike and look rows (Python writes two of them), the
+kit's wolf and deer read as plain files, a skeleton horse to ride and a dragon boss. Its README shows the rows and how it
+ships.
+
 ## 3. Budgets
 
 A budget is a limit on what your shard costs a player's phone or desktop: bytes to download, memory, draw calls,
@@ -953,8 +1038,11 @@ player can reach it there yet.
 | `no new cell: grid placement is off on the API, or this is not the shard's first upload` | Today's answer: the API does not place yet (below); or the shard had an upload before and no cell |
 
 `wildshard upload --no-place` uploads without taking a cell, for a proof upload you will delete. Only a shard's
-first upload can take a cell, so a shard uploaded with `--no-place` never gets one from a later upload. The links
-point at the share page, which is not built yet (below), and each says `(page not built yet)`.
+first upload can take a cell, so a shard uploaded with `--no-place` never gets one from a later upload. A shard made
+only to prove tooling (a `wildshard new` scaffold or a publish check) takes a `proof-<name>` slug: the API never
+gives a `proof-*` slug a cell, whatever upload sends, so a proof cannot land on the player grid; delete it when its proof
+is done (J453). The links point at the share page, which is not built yet (below), and each says `(page not built
+yet)`.
 
 **Not built yet:**
 
@@ -1019,7 +1107,7 @@ TypeScript three.js scene source, and Blender makes the `.glb` models it loads (
 #### update-target
 
 `update` works on a shard repo: a folder whose `package.json` lists `@wildshard/sdk`, as `new` writes it, or
-`@wildshard/sdk`. Run it in that folder, or name it: `wildshard update my-shard`.
+`@wildshard/sharddev`. Run it in that folder, or name it: `wildshard update my-shard`.
 
 #### update-pins-no-git
 
@@ -1136,6 +1224,26 @@ and its budget tier. Give it a phone LOD with fewer triangles, or a larger size 
 Each size class has a decoded-bytes mark per creature, mostly its textures: tiny 1 MB, small 2 MB, medium 4 MB, large
 8 MB, giant 16 MB. Over it `check` warns. Use a smaller atlas or fewer maps.
 
+#### triangle-budget
+
+The report card prints the shard's static triangles: every GLB's, each geometry once (instances share it). A phone at
+Low holds about 600 k before geometry costs more than its share of memory; over that `check` warns and the upload still
+takes it. Give the heaviest models a phone LOD or a simplified mesh, and reuse models rather than baking unique ones.
+
+#### vertex-layout
+
+WebKit draws through ANGLE's Metal back end, which reads a vertex channel in place only when its stride is a multiple
+of 4 bytes. A tightly packed 3-byte channel (an Int8 normal, a Uint8 colour) or a 6-byte one (three Int16 or Uint16)
+is copied into a second buffer, so the phone holds it twice. `check` prints each such channel on the report card. The
+three layouts the build already wrote (an Int8 normal, a Uint8 colour, a Uint16 colour, 3 wide and packed) report; any
+other copied layout refuses. Write it aligned: `staticGlb` with `meshoptReady` pads it.
+
+A packed static vertex (MEMORY-STRUCTURE STR16) writes every static channel aligned and small: Int8 normals and
+tangents, Uint8 colour, Uint16 UVs, a 4-byte stride for every channel; positions keep their storage, and a colour or
+UV outside 0 to 1 stays float. It is a build option, off by default: call `setStaticVertexPacking(true)` from
+`@wildshard/sdk/bake/packedVertex` at the top of your generator, and `staticGlb` and `compactPhoneGlb` write it.
+Delete the call to go back. The engine reads both layouts.
+
 #### validate-refused
 
 Shard-format's checks refused the built shard. The message names the check; RUNTIME-CONTRACT §8 lists what is refused.
@@ -1227,7 +1335,8 @@ Codes `declared-costs`, `performance-targets` (shard-format checking the costs t
 The shard's content changed after its hero was captured, or the card names images `hero.json` has no stamp for. The
 hero must show the current world: capture it again (`wildshard hero . --base <url>`). Only if the images already show
 the current world, `wildshard hero . --stamp-existing`. A curated hero (`"curated": true` in `hero.json`, "The hero")
-keeps its art: re-stamp it with `wildshard hero . --stamp-existing`.
+keeps its art: the build re-stamps it when only the content moved, and after you swap its images you re-stamp it with
+`wildshard hero . --stamp-existing`.
 
 #### hero-not-in-product
 
@@ -1299,8 +1408,9 @@ not hold; the budget finding after it says what that leaves. Code `audio-waiver-
 
 #### shardfile-draft
 
-A warning from `build` and `check`, a refusal from `upload`: the shard file is a draft (`sdk: "0.2"`). Prepare it
-first ("Uploading", step 1).
+A draft (`sdk: "0.2"`) gets a warning from `build` and `check`. Format validation refuses missing, stale or
+invalid preparation with code `preparation-invalid`. Prepare the built folder again, then rebuild the shard file
+("Uploading").
 
 #### shardfile-link
 
@@ -1462,6 +1572,12 @@ code; its printed fix says what to change. In a shard repo it runs the repo's ow
 root, as the repo's `pnpm lint` does (with its `lint/ratchet.json`). `wildshard new` writes one (the sdk's own rules, its plugins
 under `node_modules/@wildshard/sdk/lint/`; oxlint comes with the sdk), so a new repo lints from its first check; a repo
 without one skips lint and says so.
+
+#### pin-not-sdk
+
+Your SDK chooses the shard format and the engine: a shard repo lists `@wildshard/format` (and `@wildshard/engine`
+while its tests import it) at exactly the versions the SDK pins. `wildshard update --pins` moves them with the SDK in
+one command. A new format or engine release changes nothing in your repo until you update the SDK.
 
 #### lint-not-run
 
@@ -1685,7 +1801,7 @@ pnpm --package=@wildshard/sdk@latest dlx wildshard update --pins
 ```
 
 An older installed CLI cannot do the move: 0.2.4 and earlier refuse the flag, and 0.2.5 refuses a repo that lists
-the sdk as `@wildshard/sdk` or by a GitHub pin. Once the repo is on the newest sdk, `pnpm exec wildshard
+the sdk as `@wildshard/sharddev` or by a GitHub pin. Once the repo is on the newest sdk, `pnpm exec wildshard
 update --pins` works too.
 
 `wildshard update --pins` moves the repo to a newer sdk release first: npm's latest, or the one you name with
@@ -1695,7 +1811,7 @@ update --pins` works too.
 2. moves every pin `package.json` lists to what that release names: the sdk to the release, `@wildshard/format`,
    `@wildshard/engine` and `three` to the exact specs it pins, each `pnpm.overrides` entry for one of those packages
    with it, and `engines.node` to the Node it needs. The sdk keeps the name and form the repo lists it with:
-   `@wildshard/sdk` or `@wildshard/sdk`; an exact version, an `npm:@wildshard/sdk@<version>` alias, or a GitHub
+   `@wildshard/sdk` or `@wildshard/sharddev`; an exact version, an `npm:@wildshard/sdk@<version>` alias, or a GitHub
    pin, which moves to the commit the release's `v<version>` tag names (or to that tag, if it named a tag). It changes
    nothing else in the file and prints each move;
 3. runs `pnpm install`, and refuses if pnpm did not install that sdk and, when the repo lists `three`, that `three`;
@@ -1858,7 +1974,7 @@ An open sea with waves. **Switched on:** a `sea` water row in `world/water`. **U
 
 ### `water.field`
 
-Ponds and wet ground across a field. **Switched on:** not yet; today `water.field`. **Used by:** Nalati. **Row:** OF40.
+Ponds and wet ground across a field. **Switched on:** a water field in `world/field`. **Used by:** Nalati. **Row:** OF40.
 
 ### `grapple`
 
