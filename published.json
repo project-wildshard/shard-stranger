@@ -1,0 +1,9 @@
+{
+  "proof-stranger": {
+    "version": "0.0.1",
+    "revision": 1,
+    "hash": "e8f0f022c1454afd203e74fd4d45f8c9cde727e9ca5c2e8bfde517db78d1adc2",
+    "channel": "staging",
+    "commit": "e1c40501981cab4d2cfce52b966aa3968f0881bb"
+  }
+}
