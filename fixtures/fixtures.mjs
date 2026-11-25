@@ -737,6 +737,11 @@ function writeRows(src, rows, read, write) {
   if (rows.scripts.length > 0) write('sim/scripts', rows.scripts);
   if (moves.length > 0) write('actors/moves', moves);
   if ((rows.encounters ?? []).length > 0) write('combat/encounters', { encounters: rows.encounters });
+  // Meta QA 11-24 row 45 (MA15): the seed's boss panels name the seed's own encounters (Brasscap's Dust Wyrm), which the
+  // fixtures' encounters replace; engine refuses a boss panel whose encounter is not declared ("Boss panel requires its
+  // declared encounter: brasscap.wyrm", engine staging 47f94df1), so only the panels of declared encounters stay.
+  const ui = read('ui/ui'), declared = new Set((rows.encounters ?? []).map(row => row.id));
+  write('ui/ui', { ...ui, ui: (ui.ui ?? []).filter(row => row.kind !== 'bossPanel' || declared.has(row.encounter)) });
   return spawns;
 }
 
