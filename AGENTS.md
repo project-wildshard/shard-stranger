@@ -10,40 +10,24 @@
 
  - AGENTS.md: agents edit only below the J241 marker, never above it; README.md stays humans-only unless Jake says
    otherwise. The check is `.githooks/agents-md.mjs` (`docs/agents-md.md`).
- - Every request for work from Jake -> kit/scripts/ask-new.sh "<his words>", rules in docs/tasks/asks/README.md
+ - Every request for work from Jake -> src/scripts/.kit/ask-new.sh "<his words>", rules in docs/tasks/asks/README.md
  - Follow-up work is a row in a live plan, never a new ask.
 
 Git hygiene
 
  - Small Commit early & often.
  - Own hunks of shared files use the sanctioned patch entry:
-   `scripts/commit.sh --patch own.patch "<message>" -- <files...>`.
+   `src/scripts/.kit/commit.sh --patch own.patch "<message>" -- <files...>`.
    Make the patch against HEAD with only your hunks. Installed hooks
    run normally; peer working bytes and stages stay untouched.
- - Two ways to work, no in-between (J290). The lane's brief names the mode; a unit with no mode named is mode 1 if it
-   is one row or one fix.
-   1. **Small or urgent unit** (one row, one fix): work and commit straight on `main` in the canonical checkout
-      (`~/projects/games/wildshard/shard-stranger`), by pathspec. Then `git pull --rebase origin main` and a plain
-      `git push origin main` through the normal pre-push. No worktree, no land.
-   2. **A whole plan or half a plan:** its own worktree, `node scripts/worktree.mjs new <slug>` (`.worktrees/<slug>`
-      on `plan/<slug>`). Commit there by pathspec. Never push `plan/<slug>` by hand: only `land` pushes it (a hand
-      push spends a CI run and can cancel the one land waits on). Land with `WS_LANE_NAME=<lane> node scripts/land.mjs`
-      from the worktree only when the plan is complete, at a major milestone, or once a day for a multi-day plan.
-      Never land per row. `node scripts/worktree.mjs reap` removes worktrees whose branch has landed.
- - Never hand-push a plan branch to main, never `--no-verify` or `SKIP_*`, never force main; only `land`
-   force-pushes your `plan/*` branch, under its own lease. No other branches or worktrees.
+ - Main only (D36: this repo has no `land.config.json`): many agents share one checkout
+   (`~/projects/games/wildshard/shard-stranger`) and every commit goes straight on `main`. No worktrees,
+   no branches, no landing. After each commit, `git pull --rebase origin main`, then a plain
+   `git push origin main` through the normal pre-push (it runs `pnpm check` in a clean copy).
+   Never `--no-verify` or `SKIP_*`, never force main.
  - Use pre-commit & pre-push git hooks for keeping checks/quality/lints etc.
- - Mode 1: push after every commit. Mode 2: commit often; `land` does the pushing.
+ - Push after every commit.
  - Every meaningful commit writes a journal into project/journal, the why & informal.
-
-Landing from a worktree (mode 2; `scripts/land.mjs`, settings in `land.config.json`)
-
- - Land rebases onto main if it is ahead, pushes `plan/<slug>`, waits for that exact SHA's `ci` push run
-   to go green, rebases again if main moved (a conflict stops; a clean rebase carries the green run), pushes main
-   fast-forward only (never forced), then deletes the plan branch and the worktree. One land per worktree; worktrees never wait on each other.
- - After a rebase that moves `pnpm-lock.yaml` or a `package.json`, land runs `pnpm install --frozen-lockfile --config.confirmModulesPurge=false`.
- - Landings, CI reds, refusals and give-ups append a line to `~/.cache/wildshard/lane-receipts.log` (`grep ' land '`).
- - Main's CI runs after every land; if it goes red, the lane that landed last fixes it forward or reverts it, at once.
 
 Shared checkout
 
@@ -59,7 +43,7 @@ Docs / Repo shape
 
  - docs/ is living: edit in place, keep it true. See docs/plans for all the plans.
  - project/ is for history. See project/archive for the archives.
- - Code in ./src/; the kit's tooling (cli, scripts, test, configs) in ./kit/ (J329).
+ - Code in ./src/ etc.
  - Top level directory is thin & lean.
  - Dev commands, layout, code rules in docs/dev.md
  - Scratch goes in ./tmp/<task>; delete it when done.
