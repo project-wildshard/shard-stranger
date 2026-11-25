@@ -29,3 +29,6 @@ Step 2, the move itself (repo-kit `scripts/lean-move.mjs`):
 Fixups found by running the tools:
 - The shard lint allows an empty match: this shard has no code under
   `src/`.
+
+Step 3: `agent-sync --from` on the lean layout re-points the kit skills
+at `src/scripts/.kit/`.
