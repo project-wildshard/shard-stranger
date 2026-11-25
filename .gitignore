@@ -15,8 +15,6 @@ blob-report/
 
 # From `wildshard new`.
 # Build output: the built folder and <slug>.shardfile. Never commit it.
-public/shardfiles/
-public/assets/*/map/
 tmp/
 
 # The stranger is built by check into out/<slug> (publish.yml reads build:shards).

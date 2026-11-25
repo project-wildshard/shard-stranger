@@ -11,8 +11,8 @@
   "scripts": {
     "prepare": "git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "typecheck": "npr tsc -p test/tsconfig.json",
-    "lint": "node kit/scripts/lint.mjs --type-aware --deny-warnings --ignore-pattern '.githooks/**' --ignore-pattern '.agents/**' --ignore-pattern 'scripts/agent-parity.mjs' --ignore-pattern 'scripts/agent-sync.mjs' --ignore-pattern 'tmp/**' --ignore-pattern 'cleanroom/**' --ignore-pattern 'src/**' --ignore-pattern 'fixtures/**' --ignore-pattern 'proofs/**' --ignore-pattern 'test/**' --ignore-pattern 'public/**' --ignore-pattern 'scripts/**' --no-error-on-unmatched-pattern",
-    "lint:fix": "node kit/scripts/lint.mjs --type-aware --fix --ignore-pattern '.githooks/**' --ignore-pattern '.agents/**' --ignore-pattern 'scripts/agent-parity.mjs' --ignore-pattern 'scripts/agent-sync.mjs' --ignore-pattern 'tmp/**' --ignore-pattern 'cleanroom/**' --ignore-pattern 'src/**' --ignore-pattern 'fixtures/**' --ignore-pattern 'proofs/**' --ignore-pattern 'test/**' --ignore-pattern 'public/**' --ignore-pattern 'scripts/**' --ignore-pattern 'src/**' ",
+    "lint": "node kit/scripts/lint.mjs --type-aware --deny-warnings --ignore-pattern '.githooks/**' --ignore-pattern '.agents/**' --ignore-pattern 'scripts/agent-parity.mjs' --ignore-pattern 'scripts/agent-sync.mjs' --ignore-pattern 'tmp/**' --ignore-pattern 'cleanroom/**' --ignore-pattern 'src/**' --ignore-pattern 'fixtures/**' --ignore-pattern 'proofs/**' --ignore-pattern 'test/**' --ignore-pattern 'scripts/**' --no-error-on-unmatched-pattern",
+    "lint:fix": "node kit/scripts/lint.mjs --type-aware --fix --ignore-pattern '.githooks/**' --ignore-pattern '.agents/**' --ignore-pattern 'scripts/agent-parity.mjs' --ignore-pattern 'scripts/agent-sync.mjs' --ignore-pattern 'tmp/**' --ignore-pattern 'cleanroom/**' --ignore-pattern 'src/**' --ignore-pattern 'fixtures/**' --ignore-pattern 'proofs/**' --ignore-pattern 'test/**' --ignore-pattern 'scripts/**' --ignore-pattern 'src/**' ",
     "format": "npr oxfmt -c kit/.oxfmtrc.json kit '!src/**' '!fixtures/**' '!proofs/**' '!test/**' '!cleanroom/**' '!.oxlintrc.author.json'",
     "format:check": "npr oxfmt -c kit/.oxfmtrc.json --check kit '!src/**' '!fixtures/**' '!proofs/**' '!test/**' '!cleanroom/**' '!.oxlintrc.author.json'",
     "test": "node --test 'test/*.test.mjs'",
@@ -30,9 +30,9 @@
     "build:shards": "wildshard check . out/proof-stranger"
   },
   "dependencies": {
-    "@wildshard/cli": "0.4.30",
-    "@wildshard/format": "npm:@wildshard/shard-format@0.74.1",
-    "@wildshard/sdk": "0.4.30",
+    "@wildshard/cli": "0.5.1",
+    "@wildshard/format": "npm:@wildshard/shard-format@0.78.0",
+    "@wildshard/sdk": "0.5.1",
     "three": "0.186.0",
     "@types/three": "0.186.0"
   },
@@ -129,7 +129,7 @@
     "overrides": {
       "binaryen": "npm:@pre-bundled/binaryen@132.0.0-patch-1",
       "assemblyscript>binaryen": "npm:@pre-bundled/binaryen@131.0.0-nightly.20260721-patch-1",
-      "@wildshard/format": "npm:@wildshard/shard-format@0.74.1"
+      "@wildshard/format": "npm:@wildshard/shard-format@0.78.0"
     }
   },
   "binDependencies": {
@@ -137,5 +137,8 @@
     "oxfmt": "0.74.0",
     "oxlint-tsgolint": "7.0.2004"
   },
-  "binDependenciesInstaller": "npm"
+  "binDependenciesInstaller": "npm",
+  "wildshard": {
+    "migrated": "0.5.1"
+  }
 }
