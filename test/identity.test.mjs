@@ -4,8 +4,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-test('the shard is stranger, named Stranger', () => {
+// J453: a proof shard never holds a player's grid cell; the `proof-` slug keeps it off (api-server MZ5).
+test('the shard is proof-stranger, named Stranger', () => {
   const { identity } = JSON.parse(readFileSync(new URL('../src/shard.json', import.meta.url), 'utf8'));
-  assert.equal(identity.slug, 'stranger');
+  assert.equal(identity.slug, 'proof-stranger');
   assert.equal(identity.name, 'Stranger');
 });

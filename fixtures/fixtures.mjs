@@ -11,6 +11,8 @@ import { pathToFileURL } from 'node:url';
 
 const [sdk, engine] = process.argv.slice(2, 4).map(path => resolve(path));
 const name = process.argv[4];
+// J453: a staging proof publishes off the player grid under a `proof-*` slug (api-server MZ5); compose writes this slug.
+const SLUG = process.env.STRANGER_SLUG ?? 'proof-stranger';
 const root = import.meta.dirname, scratch = resolve(root, 'tmp');
 const at = (base, file) => import(pathToFileURL(resolve(base, file)).href);
 const { writeHandwrittenSource } = await at(sdk, 'packages/sdk/src/sharddev/handwritten.ts');
@@ -591,7 +593,7 @@ const BOSSES = ['dragon', 'mech'];
 const POPULATION = { wolf: { group: 'stranger.wolves', at: [[30, 52], [33, 55], [27, 56]] }, deer: { group: 'stranger.deer', at: [[-30, 52], [-33, 56], [-27, 57]] } };
 async function compose(src) {
   const kit = resolve(sdk, 'packages/kit/content');
-  writeHandwrittenSource(src, 'stranger');
+  writeHandwrittenSource(src, SLUG);
   const read = section => JSON.parse(readFileSync(resolve(src, 'sections', `${section}.json`), 'utf8'));
   const write = (section, value) => { mkdirSync(resolve(src, 'sections', section, '..'), { recursive: true }); writeFileSync(resolve(src, 'sections', `${section}.json`), `${JSON.stringify(value)}\n`); };
   // pass 1 reads every fixture's ids for the shard's catalogues; pass 2 compiles each guest against them
@@ -632,7 +634,7 @@ async function card(src, read, write) {
     const cost = assetCost('image', new Uint8Array(bytes));
     index.files.push({ compressed: bytes.length, critical: false, ...cost, dependencies: [], hash: id, kind: 'image', name: `ui/images/hero-${slot}`, path });
     index.admission.library.push(id); index.admission.budgets.library.compressed += bytes.length; index.admission.budgets.library.resident += cost.decoded + cost.gpu;
-    urls[slot] = `/shardfiles/stranger/${path}`;
+    urls[slot] = `/shardfiles/${SLUG}/${path}`;
   }
   rmSync(heroes, { recursive: true, force: true });
   index.identity = { ...index.identity, name: 'Stranger', author: 'Wildshard' };
@@ -650,12 +652,12 @@ async function card(src, read, write) {
   const level = read('ui/level');
   level.manifest = { ...level.manifest, ...words, card: urls };
   write('ui/level', level);
-  const discoveryPath = resolve(src, 'mounts/shardfiles/stranger/discovery.json'), discovery = JSON.parse(readFileSync(discoveryPath, 'utf8'));
+  const discoveryPath = resolve(src, `mounts/shardfiles/${SLUG}/discovery.json`), discovery = JSON.parse(readFileSync(discoveryPath, 'utf8'));
   discovery.data = { ...discovery.data, ...words, name: 'Stranger', card: urls };
   const bytes = Buffer.from(JSON.stringify(discovery)); writeFileSync(discoveryPath, bytes);
   // cook.json states each mount's size and hash
   const cook = JSON.parse(readFileSync(resolve(src, 'cook.json'), 'utf8'));
-  for (const mount of cook.mounts) if (mount.path === 'mounts/shardfiles/stranger/discovery.json') Object.assign(mount, { bytes: bytes.length, hash: hash(bytes) });
+  for (const mount of cook.mounts) if (mount.path === `mounts/shardfiles/${SLUG}/discovery.json`) Object.assign(mount, { bytes: bytes.length, hash: hash(bytes) });
   const cookBytes = Buffer.from(`${JSON.stringify(cook)}\n`); writeFileSync(resolve(src, 'cook.json'), cookBytes);
   const settled = JSON.parse(readFileSync(resolve(src, 'shard.json'), 'utf8'));
   settled.cook = { ...settled.cook, bytes: cookBytes.length, hash: hash(cookBytes) };
@@ -680,7 +682,7 @@ async function gather(kit, src) {
   // the rabbit and the dragonfly are Python's (write-fixture.py), written into a seed of their own and carried over
   for (const [id, [x, z]] of Object.entries(PYTHON)) {
     mkdirSync(scratch, { recursive: true }); const seed = resolve(scratch, `python-${id}`); rmSync(seed, { recursive: true, force: true });
-    writeHandwrittenSource(seed, 'stranger');
+    writeHandwrittenSource(seed, SLUG);
     const made = spawnSync('python3', [resolve(root, 'write-fixture.py'), seed, id], { encoding: 'utf8' });
     if (made.status !== 0) throw new Error(`write-fixture.py ${id}: ${made.stderr}`);
     const at = section => JSON.parse(readFileSync(resolve(seed, 'sections', `${section}.json`), 'utf8'));

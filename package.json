@@ -27,7 +27,7 @@
     "check": "pnpm check:bin-pins && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm check:asks && pnpm check:agents && pnpm check:agent-sync && pnpm test:agent-hooks && pnpm check:parity && node --check scripts/chromium-keychain-check.mjs && node --test test/tooling/chrome-keychain.test.mjs test/tooling/worktree-guard.test.mjs test/tooling/disk-land.test.mjs test/tooling/lane-live.test.mjs test/tooling/keep-copy.test.mjs test/tooling/leftovers-report.test.mjs test/tooling/reap-report.test.mjs",
     "check:shard": "wildshard check .",
     "check:bin-pins": "node kit/scripts/bin-pins.mjs",
-    "build:shards": "wildshard check . out/stranger"
+    "build:shards": "wildshard check . out/proof-stranger"
   },
   "dependencies": {
     "@wildshard/cli": "0.4.30",

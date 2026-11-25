@@ -49,11 +49,12 @@ node --experimental-transform-types --import <engine>/scripts/sim-node-loader.mj
 python3 fixtures/check-fixture.py <sharddev> <engine> --fixture rabbit|dragonfly
 # the composed shard: every spawn stands, no guest refuses, riding is installed
 node --experimental-transform-types --import <engine>/scripts/sim-node-loader.mjs \
-  fixtures/composed-sim.mjs <sharddev> <engine> out/stranger
+  fixtures/composed-sim.mjs <sharddev> <engine> out/proof-stranger
 ```
 
 ## Shipping
 
-`pnpm build:shards` runs `wildshard check . out/stranger`. Publish from Actions with
+`pnpm build:shards` runs `wildshard check . out/proof-stranger`. Publish from Actions with
 `gh workflow run publish.yml -R project-wildshard/shard-stranger -f channel=staging`: it prepares the product in phone
-WebKit and uploads it like any shard. Its first staging upload took its grid cell (`GRID_AUTOPLACE=staging`).
+WebKit and uploads it like any shard. Its slug is `proof-stranger` (J453, MZ5): a `proof-*` slug records and serves but never takes a
+grid cell, so it never sits on the player grid. Remove it from staging when its proof is done.
