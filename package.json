@@ -30,18 +30,18 @@
     "build:shards": "wildshard check . out/proof-stranger"
   },
   "dependencies": {
+    "@types/three": "0.186.0",
     "@wildshard/cli": "0.5.1",
     "@wildshard/format": "npm:@wildshard/shard-format@0.78.0",
     "@wildshard/sdk": "0.5.1",
-    "three": "0.186.0",
-    "@types/three": "0.186.0"
+    "three": "0.186.0"
   },
   "devDependencies": {
     "@types/node": "24.3.1",
     "@typescript/typescript6": "6.0.2",
+    "npm-bin-deps": "2.2.0",
     "oxlint": "1.89.0",
-    "playwright": "1.65.0",
-    "npm-bin-deps": "2.1.0"
+    "playwright": "1.65.0"
   },
   "pnpm": {
     "ignoredOptionalDependencies": [
@@ -137,8 +137,9 @@
     "oxfmt": "0.74.0",
     "oxlint-tsgolint": "7.0.2004"
   },
-  "binDependenciesInstaller": "npm",
+  "binDependenciesInstaller": "pnpm",
   "wildshard": {
     "migrated": "0.5.1"
-  }
+  },
+  "binDependenciesProjectSettings": false
 }
