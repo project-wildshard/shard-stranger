@@ -58,3 +58,7 @@ node --experimental-transform-types --import <engine>/scripts/sim-node-loader.mj
 `gh workflow run publish.yml -R project-wildshard/shard-stranger -f channel=staging`: it prepares the product in phone
 WebKit and uploads it like any shard. Its slug is `proof-stranger` (J453, MZ5): a `proof-*` slug records and serves but never takes a
 grid cell, so it never sits on the player grid. Remove it from staging when its proof is done.
+An online (staging or production) page enters only a grid cell (engine `entry.ts`, OF3: "Not in this world yet"), so a
+`proof-*` slug publishes, cooks and goes live on staging but no staging room seats it; a hidden solo placement does not
+help (meta QA 11-24 row 45, 11-25). Its multiplayer probe runs where a cell may hold it: a local world (engine
+`scripts/dev-world.mjs`).

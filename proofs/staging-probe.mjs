@@ -9,8 +9,11 @@
 //   mech       a player's blows break an armour plate: its channel reads 1 on both pages
 //   horse      Ana mounts the skeleton horse, walks and gallops it, and gets off beside it; Bo sees her ride
 //   boss       both shoot the flying dragon with the lever until its hp gate lands it, then fight on with swords
+//   harvest    Ana fells a kit wolf, both pages see it fall, and Ana harvests its body for the kit's drops (meta MA15)
+// Bo is headless WebKit in an iPhone profile at Jake's iPhone 17 Pro size (402×874 at pixel density 3, meta MA15). Both
+// pages carry the agent marker in their user agent (the engine's browser-playwright marks every context), never `?agent=`.
 // J205: staging or preview only, never production. Headless and muted, 60 fps cap.
-//   node proofs/staging-probe.mjs <engine checkout> <out dir> [--base=https://staging.wildshard.io] [--cases=wolves,deer,chameleon,mech,horse]
+//   node proofs/staging-probe.mjs <engine checkout> <out dir> [--base=https://staging.wildshard.io] [--slug=proof-stranger] [--cases=wolves,harvest,…]
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -20,9 +23,9 @@ const flag = (name, fallback) => process.argv.find(arg => arg.startsWith(`--${na
 if (engineDir === undefined || outDir === undefined) throw new Error('usage: staging-probe.mjs <engine checkout> <out dir> [--base=…] [--cases=…]');
 const base = flag('base', 'https://staging.wildshard.io').replace(/\/$/u, '');
 if (!/^https:\/\/(staging|preview)\.wildshard\.io$/u.test(base)) throw new Error('--base takes staging or preview only (J205)');
-const cases = flag('cases', 'horse,chameleon,deer,wolves,mech,boss').split(',').filter(Boolean), slug = flag('slug', 'stranger');
+const cases = flag('cases', 'horse,chameleon,deer,wolves,harvest,mech,boss').split(',').filter(Boolean), slug = flag('slug', 'proof-stranger');
 const at = file => import(pathToFileURL(resolve(engineDir, 'scripts', file)).href);
-const { chromium, webkit } = await at('browser-playwright.mjs');
+const { chromium, webkit, devices } = await at('browser-playwright.mjs');
 const { KEYCHAIN_ARGS } = await at('chromium-keychain.mjs');
 const { saveFixture } = await at('debug-settings.mjs');
 mkdirSync(outDir, { recursive: true });
@@ -250,6 +253,40 @@ const CASES = {
     note('wolves: the pack hunts together (assist), seen on both pages', assist.size >= 2 && seenOnBoth.size >= 2, { hunting: [...assist], onBoth: [...seenOnBoth] });
     return note('wolves: both players land hits', landed.Ana > 0 && landed.Bo > 0, { landed, swings, closest: close });
   },
+  async harvest(ana, bo) {
+    // MA15: the kit wolf's `harvest` rows put its drops in the shard's item catalogue (fixtures.mjs compose). Ana fells one
+    // with the sword, Bo's page sees the same body fall, and Ana's carcass prompt pays its drops ("… harvested · N in the pack").
+    await hold(ana.page, 'weapon.stranger-sword');
+    let start = await look(bo.page); const ids = idsOf(start, 'kit.creature.wolf');
+    for (const ends = Date.now() + 45_000; Date.now() < ends && !ids.some(id => start.bodies[id]?.alive === true);) { await sleep(1000); start = await look(bo.page); }
+    const id = ids.find(each => start.bodies[each]?.alive === true);
+    if (id === undefined) return note('harvest: a living wolf to fell', false, Object.fromEntries(ids.map(each => [each, start.bodies[each]?.alive])));
+    let fell = null;
+    for (const ends = Date.now() + 90_000; Date.now() < ends && fell === null;) {
+      const seen = await look(ana.page), body = seen.bodies[id];
+      if (body === undefined) { await sleep(300); continue; }
+      if (body.alive === false) { const b = (await look(bo.page)).bodies[id]; fell = { ana: body, bo: b ?? null }; break; }
+      const away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z);
+      if (away > 4) { await goTo(ana, id, 2.5, 10); continue; }
+      await steer(ana.page, body.x, body.z, away > 1.4 ? 1 : 0, false, away < 2.3, aimAt(seen, body));
+      await sleep(250);
+    }
+    await stop(ana.page);
+    await both(ana, bo, 'harvest-fell');
+    if (!note('harvest: Ana felled a wolf, and Bo\'s page saw it fall', fell !== null && fell.bo?.alive === false, fell ?? { id })) return false;
+    // stand on the body, then press use until the prompt pays
+    let paid = null;
+    for (const ends = Date.now() + 30_000; Date.now() < ends && paid === null;) {
+      const seen = await look(ana.page), body = seen.bodies[id];
+      if (body !== undefined && Math.hypot(body.x - seen.me.x, body.z - seen.me.z) > 1.2) await goTo(ana, id, 1.2, 8);
+      await ana.page.evaluate(() => { window.__wildshard.world.game.app.input.press('use'); });
+      await sleep(2500);
+      paid = await ana.page.evaluate(() => [...document.querySelectorAll('body *')].map(e => e.children.length === 0 ? (e.textContent ?? '').trim() : '')
+        .find(text => /harvested|in the pack/iu.test(text)) ?? null);
+    }
+    await both(ana, bo, 'harvest-paid');
+    return note('harvest: the wolf\'s body pays its drops into Ana\'s pack', paid !== null && !/^Nothing harvested/iu.test(paid), { paid });
+  },
   async boss(ana, bo) {
     // the dragon flies at 6 m until half its hp is gone (the encounter's gate), so both shoot it with the lever from inside
     // its arena, one at a time so each blow is that player's; then it lands and they close in with swords
@@ -332,7 +369,13 @@ const wBrowser = await webkit.launch({ headless: true });
 let ana, bo;
 try {
   ana = await enter(cBrowser, 'Ana', { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
-  bo = await enter(wBrowser, 'Bo', { viewport: { width: 402, height: 874 }, deviceScaleFactor: 1, hasTouch: true });
+  // MA15: Jake's phone (iPhone 17 Pro: 402×874 points at pixel density 3), as Playwright's iPhone profile on headless WebKit
+  const { defaultBrowserType: _webkit, ...iphone } = devices['iPhone 15 Pro'];
+  bo = await enter(wBrowser, 'Bo', { ...iphone, viewport: { width: 402, height: 874 }, screen: { width: 402, height: 874 }, deviceScaleFactor: 3 });
+  for (const who of [ana, bo]) {
+    const ua = await who.page.evaluate(() => navigator.userAgent);
+    note(`${who.name}: the agent marker rides the user agent, not the URL`, /WildshardAgent\/1/u.test(ua) && !/[?&]agent=/u.test(who.page.url()), { ua, url: who.page.url() });
+  }
   const met = await look(ana.page);
   note('two players: Ana sees Bo', named(met, 'Bo') !== undefined, met.others);
   await both(ana, bo, 'entered');
