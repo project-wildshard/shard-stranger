@@ -12,9 +12,14 @@
 //   harvest    Ana fells a kit wolf, both pages see it fall, and Ana harvests its body for the kit's drops (meta MA15)
 // Bo is headless WebKit in an iPhone profile at Jake's iPhone 17 Pro size (402×874 at pixel density 3, meta MA15). Both
 // pages carry the agent marker in their user agent (the engine's browser-playwright marks every context), never `?agent=`.
-// J205: staging or preview only, never production. Headless and muted, 60 fps cap.
-//   node proofs/staging-probe.mjs <engine checkout> <out dir> [--base=https://staging.wildshard.io] [--slug=proof-stranger] [--cases=wolves,harvest,…]
-import { mkdirSync, writeFileSync } from 'node:fs';
+// J205: staging, preview or a local dev world on this Mac, never production. Headless and muted, 60 fps cap.
+// A local world (meta QA 11-24 row 45, J453 keeps a proof slug off the staging grid): a `pnpm dev` world on 127.0.0.1 whose
+// client baked the slug into a cell. There the probe also seats Cy (`--third`, a second desktop page), checks that every page
+// names each creature with the same species (identity), and checks the world's release against the key its page was stamped
+// with (signed admission).
+//   node proofs/staging-probe.mjs <engine checkout> <out dir> [--base=https://staging.wildshard.io|http://127.0.0.1:<port>] [--slug=proof-stranger] [--cases=wolves,harvest,…] [--third]
+import { verify } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -22,7 +27,9 @@ const [engineDir, outDir] = process.argv.slice(2).filter(arg => !arg.startsWith(
 const flag = (name, fallback) => process.argv.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 if (engineDir === undefined || outDir === undefined) throw new Error('usage: staging-probe.mjs <engine checkout> <out dir> [--base=…] [--cases=…]');
 const base = flag('base', 'https://staging.wildshard.io').replace(/\/$/u, '');
-if (!/^https:\/\/(staging|preview)\.wildshard\.io$/u.test(base)) throw new Error('--base takes staging or preview only (J205)');
+const local = /^http:\/\/(127\.0\.0\.1|localhost):[0-9]{2,5}$/u.test(base);
+if (!local && !/^https:\/\/(staging|preview)\.wildshard\.io$/u.test(base)) throw new Error('--base takes staging, preview or a local dev world only (J205)');
+const third = process.argv.includes('--third');
 const cases = flag('cases', 'horse,chameleon,deer,wolves,harvest,mech,boss').split(',').filter(Boolean), slug = flag('slug', 'proof-stranger');
 const at = file => import(pathToFileURL(resolve(engineDir, 'scripts', file)).href);
 const { chromium, webkit, devices } = await at('browser-playwright.mjs');
@@ -82,7 +89,13 @@ const look = page => page.evaluate(() => {
     others: (window.__onlinePlayers?.() ?? []).map(other => ({ name: other.name, x: other.x, z: other.z, speed: other.speed, mounted: other.mounted })) };
 });
 /** The server ids of `species`, in id order (the same on every page). */
-const idsOf = (seen, species) => Object.keys(seen.bodies).filter(id => seen.bodies[id].species === species).sort((a, b) => Number(a.split(':')[1]) - Number(b.split(':')[1]));
+// A body further off than the server's interest range is not on a page at all (meta QA 11-24 row 45, v0.1.90: from the spawn the
+// pages hold the fixtures near it, never the kit wolves and deer 58 m off). The shard's own spawn rows name every creature and where
+// it stands, so a case knows its ids before any page holds them and walks toward the spawn until one does.
+const AUTHORED = new Map(JSON.parse(readFileSync(new URL('../src/sections/actors/creatures.json', import.meta.url), 'utf8')).creatures.spawns
+  .map(row => [row.id, { species: row.species, x: row.at[0], z: row.at[2] }]));
+const idsOf = (seen, species) => [...new Set([...Object.keys(seen.bodies).filter(id => seen.bodies[id].species === species),
+  ...[...AUTHORED].filter(([, row]) => row.species === species).map(([id]) => id)])].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
 const named = (seen, who) => seen.others.find(other => other.name.startsWith(who));
 /** Get on or off through the page's own ride press (it carries the live command seq). */
 const ride = (page, action) => page.evaluate(how => { const net = window.__workerClientNet(); if (typeof net.predictor?.ride === 'function') net.predictor.ride(how); else net.client.act({ kind: 'ride', seq: net.client.seq ?? 0, action: how }); }, action);
@@ -109,17 +122,18 @@ const stop = page => page.evaluate(() => { const { player } = window.__wildshard
 async function goTo(who, id, near, seconds = 60) {
   let best = Infinity, since = Date.now(), side = 1;
   for (const ends = Date.now() + seconds * 1000; Date.now() < ends;) {
-    const seen = await look(who.page), body = seen.bodies[id];
+    // a body no page holds yet is walked toward where the shard spawns it, round walls the same way, until a page holds it
+    const seen = await look(who.page), held = seen.bodies[id], body = held ?? AUTHORED.get(id);
     if (body === undefined) { await sleep(250); continue; }
     const away = Math.hypot(body.x - seen.me.x, body.z - seen.me.z);
-    if (away <= near) { await stop(who.page); return { away, seen }; }
+    if (held !== undefined && away <= near) { await stop(who.page); return { away, seen }; }
     if (away < best - 0.5) { best = away; since = Date.now(); }
     else if (Date.now() - since > 2500) {
       const dx = (body.x - seen.me.x) / away, dz = (body.z - seen.me.z) / away, aside = { x: seen.me.x - dz * 7 * side, z: seen.me.z + dx * 7 * side };
       for (const off = Date.now() + 1800; Date.now() < off;) { await steer(who.page, aside.x, aside.z, 1, true); await sleep(150); }
       side = -side; best = Infinity; since = Date.now(); continue;
     }
-    await steer(who.page, body.x, body.z, 1, away > 10);
+    await steer(who.page, body.x, body.z, 1, away > 10 || held === undefined);
     await sleep(150);
   }
   await stop(who.page);
@@ -196,10 +210,13 @@ const CASES = {
   async deer(ana, bo) {
     const ids = idsOf(await look(bo.page), 'kit.creature.deer');
     await goTo(bo, ids[0], 26);
+    // Ana comes from wherever the last case left her (the chameleon's yard is 70 m off, walls between): first to the herd's edge
+    await goTo(ana, ids[0], 30);
     await both(ana, bo, 'deer-before');
     let fled = null;
     for (const ends = Date.now() + 30_000; Date.now() < ends && fled === null;) {
-      await steer(ana.page, (await look(ana.page)).bodies[ids[0]]?.x ?? 0, (await look(ana.page)).bodies[ids[0]]?.z ?? 0, 1, true);
+      const seen = await look(ana.page), toward = seen.bodies[ids[0]] ?? AUTHORED.get(ids[0]);
+      await steer(ana.page, toward?.x ?? 0, toward?.z ?? 0, 1, true);
       const [a, b] = [await look(ana.page), await look(bo.page)];
       const id = ids.find(each => a.bodies[each]?.state === 'flee' && b.bodies[each]?.state === 'flee');
       if (id !== undefined) fled = { id, ana: a.bodies[id], bo: b.bodies[id] };
@@ -212,10 +229,11 @@ const CASES = {
   async wolves(ana, bo) {
     await hold(ana.page, 'weapon.stranger-sword'); await hold(bo.page, 'weapon.stranger-sword');
     // the pack stands again 30 s after it falls (stranger revision 3): wait for it
-    let start = await look(bo.page), ids = idsOf(start, 'kit.creature.wolf');
+    const ids = idsOf(await look(bo.page), 'kit.creature.wolf');
+    await goTo(bo, ids[1], 24); await goTo(ana, ids[0], 24);
+    let start = await look(bo.page);
     for (const ends = Date.now() + 45_000; Date.now() < ends && !ids.every(id => start.bodies[id]?.alive === true);) { await sleep(1000); start = await look(bo.page); }
     note('wolves: the pack stands, on both pages', ids.every(id => start.bodies[id]?.alive === true), Object.fromEntries(ids.map(id => [id, start.bodies[id]?.state])));
-    await goTo(bo, ids[1], 24); await goTo(ana, ids[0], 24);
     await both(ana, bo, 'wolves-before');
     const assist = new Set(), seenOnBoth = new Set(), landed = { Ana: 0, Bo: 0 }, swings = { Ana: 0, Bo: 0 }, close = { Ana: Infinity, Bo: Infinity };
     const watch = async () => {
@@ -257,7 +275,9 @@ const CASES = {
     // MA15: the kit wolf's `harvest` rows put its drops in the shard's item catalogue (fixtures.mjs compose). Ana fells one
     // with the sword, Bo's page sees the same body fall, and Ana's carcass prompt pays its drops ("… harvested · N in the pack").
     await hold(ana.page, 'weapon.stranger-sword');
-    let start = await look(bo.page); const ids = idsOf(start, 'kit.creature.wolf');
+    const ids = idsOf(await look(bo.page), 'kit.creature.wolf');
+    await goTo(bo, ids[0], 20); await goTo(ana, ids[0], 12);
+    let start = await look(bo.page);
     for (const ends = Date.now() + 45_000; Date.now() < ends && !ids.some(id => start.bodies[id]?.alive === true);) { await sleep(1000); start = await look(bo.page); }
     const id = ids.find(each => start.bodies[each]?.alive === true);
     if (id === undefined) return note('harvest: a living wolf to fell', false, Object.fromEntries(ids.map(each => [each, start.bodies[each]?.alive])));
@@ -275,17 +295,24 @@ const CASES = {
     await both(ana, bo, 'harvest-fell');
     if (!note('harvest: Ana felled a wolf, and Bo\'s page saw it fall', fell !== null && fell.bo?.alive === false, fell ?? { id })) return false;
     // stand on the body, then press use until the prompt pays
-    let paid = null;
+    let paid = null; const prompts = [];
     for (const ends = Date.now() + 30_000; Date.now() < ends && paid === null;) {
       const seen = await look(ana.page), body = seen.bodies[id];
-      if (body !== undefined && Math.hypot(body.x - seen.me.x, body.z - seen.me.z) > 1.2) await goTo(ana, id, 1.2, 8);
+      if (body !== undefined && Math.hypot(body.x - seen.me.x, body.z - seen.me.z) > 1.8) await goTo(ana, id, 1.8, 8);
+      // the carcass prompt needs the eye to see the body (a camera ray, play.ts): look down at it, not over it
+      const now = await look(ana.page), carcass = now.bodies[id];
+      if (carcass !== undefined) { await steer(ana.page, carcass.x, carcass.z, 0, false, false, Math.atan2(carcass.y + 0.3 - (now.me.y + 1.68), Math.max(0.3, Math.hypot(carcass.x - now.me.x, carcass.z - now.me.z)))); await sleep(300); }
+      const texts = () => ana.page.evaluate(() => [...document.querySelectorAll('body *')].map(e => e.children.length === 0 ? (e.textContent ?? '').trim() : '').filter(Boolean));
+      prompts.push({ prompt: (await texts()).find(text => /harvest/iu.test(text)) ?? null, near: await ana.page.evaluate(() => {
+        const { animals, player } = window.__wildshard.world;
+        return (animals?.animals ?? []).map(a => [a.entityId, a.kind, a.alive, Math.round(a.position.distanceTo(player.position) * 10) / 10, (a.harvest ?? []).length]).filter(row => row[3] < 8);
+      }) });
       await ana.page.evaluate(() => { window.__wildshard.world.game.app.input.press('use'); });
-      await sleep(2500);
-      paid = await ana.page.evaluate(() => [...document.querySelectorAll('body *')].map(e => e.children.length === 0 ? (e.textContent ?? '').trim() : '')
-        .find(text => /harvested|in the pack/iu.test(text)) ?? null);
+      // the skinning beat, then the server's drops, then a card that fades: read the page often, not once
+      for (const until = Date.now() + 4000; Date.now() < until && paid === null; await sleep(200)) paid = (await texts()).find(text => /harvested|in the pack/iu.test(text)) ?? null;
     }
     await both(ana, bo, 'harvest-paid');
-    return note('harvest: the wolf\'s body pays its drops into Ana\'s pack', paid !== null && !/^Nothing harvested/iu.test(paid), { paid });
+    return note('harvest: the wolf\'s body pays its drops into Ana\'s pack', paid !== null && !/^Nothing harvested/iu.test(paid), { paid, prompts: prompts.slice(0, 6), body: (await look(ana.page)).bodies[id] ?? null });
   },
   async boss(ana, bo) {
     // the dragon flies at 6 m until half its hp is gone (the encounter's gate), so both shoot it with the lever from inside
@@ -366,7 +393,7 @@ const CASES = {
 
 const cBrowser = await chromium.launch({ headless: true, args: [...KEYCHAIN_ARGS, '--use-angle=metal', '--ignore-gpu-blocklist'] });
 const wBrowser = await webkit.launch({ headless: true });
-let ana, bo;
+let ana, bo, cy;
 try {
   ana = await enter(cBrowser, 'Ana', { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
   // MA15: Jake's phone (iPhone 17 Pro: 402×874 points at pixel density 3), as Playwright's iPhone profile on headless WebKit
@@ -376,8 +403,27 @@ try {
     const ua = await who.page.evaluate(() => navigator.userAgent);
     note(`${who.name}: the agent marker rides the user agent, not the URL`, /WildshardAgent\/1/u.test(ua) && !/[?&]agent=/u.test(who.page.url()), { ua, url: who.page.url() });
   }
+  if (third) cy = await enter(cBrowser, 'Cy', { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
   const met = await look(ana.page);
   note('two players: Ana sees Bo', named(met, 'Bo') !== undefined, met.others);
+  if (cy !== undefined) {
+    const seenByCy = await look(cy.page);
+    note('three pages: Cy sees Ana and Bo, and Ana sees Cy', named(seenByCy, 'Ana') !== undefined && named(seenByCy, 'Bo') !== undefined && named(await look(ana.page), 'Cy') !== undefined, seenByCy.others);
+  }
+  // creature identity: every page names each server id with the same species
+  const pages = [ana, bo, cy].filter(who => who !== undefined), censuses = await Promise.all(pages.map(who => look(who.page)));
+  const ids = [...new Set(censuses.flatMap(seen => Object.keys(seen.bodies)))], clash = ids.filter(id => new Set(censuses.map(seen => seen.bodies[id]?.species).filter(Boolean)).size > 1);
+  const shared = ids.filter(id => censuses.every(seen => seen.bodies[id] !== undefined));
+  note(`creature identity: ${pages.length} pages agree on each creature's species`, clash.length === 0 && shared.length > 0, { creatures: ids.length, onEveryPage: shared.length, clash });
+  if (local) {
+    // signed admission: the release the room took names this shard and verifies under the key the page was stamped with
+    const stamp = await ana.page.evaluate(() => globalThis.__WS_WORLD__ ?? null), release = await (await fetch(stamp?.release ?? `${base}/__dev/release.json`)).json();
+    const key = stamp === null ? null : { key: Buffer.from(stamp.key, 'hex'), format: 'der', type: 'spki' }, body = JSON.parse(release.body);
+    const good = key !== null && verify(null, Buffer.from(release.body), key, Buffer.from(release.signature, 'hex'));
+    const forged = key !== null && verify(null, Buffer.from(release.body.replace(slug, `${slug}-forged`)), key, Buffer.from(release.signature, 'hex'));
+    note('signed admission: the room\'s release names the shard and verifies under the page\'s key; an edited body does not', good && !forged && body.shards.some(row => row.slug === slug),
+      { serial: body.serial, channel: body.channel, engineBuild: body.engineBuild, shards: body.shards, good, forged });
+  }
   await both(ana, bo, 'entered');
   const census = await look(bo.page);
   note('Bo\'s creatures', true, Object.entries(census.bodies).slice(0, 40).map(([id, body]) => `${id}:${body.species}:${body.state}:${body.hp}`));
@@ -386,7 +432,7 @@ try {
     catch (error) { verdicts[name] = note(`${name}: threw`, false, String(error?.stack ?? error).slice(0, 600)); }
   }
 } finally {
-  const errors = { ana: ana?.errors ?? [], bo: bo?.errors ?? [] };
+  const errors = { ana: ana?.errors ?? [], bo: bo?.errors ?? [], ...cy === undefined ? {} : { cy: cy.errors } };
   writeFileSync(resolve(outDir, 'probe.json'), `${JSON.stringify({ base, cases, verdicts, log, shots, errors }, null, 1)}\n`);
   await cBrowser.close(); await wBrowser.close();
 }
