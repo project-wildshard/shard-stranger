@@ -2,7 +2,7 @@
 // (sections JSON plus ABI-1 decision guests compiled by sharddev's own compiler), checked by the ordinary
 // `wildshard check`, then run on the engine's server sim for 60 s against its behaviour.
 //
-//   node --experimental-transform-types --import <engine>/scripts/sim-node-loader.mjs fixtures.mjs <sharddev> <engine> <fixture>
+//   node --import <engine>/scripts/sim-node-loader.mjs fixtures.mjs <sharddev> <engine> <fixture>
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';

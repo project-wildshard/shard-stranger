@@ -46,7 +46,7 @@ with TemporaryDirectory(prefix=f"{args.fixture}-", dir=scratch) as folder:
         if checked.returncode or report["verdict"] != "pass":
             raise SystemExit(checked.stdout)
         subprocess.run(
-            ["node", "--experimental-transform-types", "--import", str(engine / "scripts/sim-node-loader.mjs"),
+            ["node", "--import", str(engine / "scripts/sim-node-loader.mjs"),
              str(root / "sim-check.mjs"), str(engine), str(sdk), report["output"], args.fixture],
             check=True,
         )

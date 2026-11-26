@@ -1,7 +1,7 @@
 // ONE-FORMAT OF25: the composed stranger shard on the engine's server sim for 60 s: every spawn stands, no decision
 // guest refuses or is disabled, and the population and the boss are there to meet.
 //
-//   node --experimental-transform-types --import <engine>/scripts/sim-node-loader.mjs composed-sim.mjs <sharddev> <engine> <built folder>
+//   node --import <engine>/scripts/sim-node-loader.mjs composed-sim.mjs <sharddev> <engine> <built folder>
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
