@@ -22,6 +22,7 @@ import { verify } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { enterZone } from '@wildshard/sdk/headless/scripts/zone-entry.mjs'; // CHUNK-PARAM-REMOVAL CP20 (J522): no zone in any address
 
 const [engineDir, outDir] = process.argv.slice(2).filter(arg => !arg.startsWith('--')).map(path => resolve(path));
 const flag = (name, fallback) => process.argv.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
@@ -48,7 +49,7 @@ async function enter(browser, name, device) {
   await saveFixture(context, { scope: 'device', key: 'devMode', data: true });
   await saveFixture(context, { scope: 'global', key: 'settings', data: { music: false, sfx: false, volume: 0 }, merge: true });
   const t0 = Date.now();
-  await page.goto(`${base}/?chunk=${slug}&mute=1&nolock=1&skipintro=1&fps=60`, { waitUntil: 'load', timeout: 120_000 });
+  await enterZone(page, { zone: slug, base, flags: 'mute=1&nolock=1&skipintro=1&fps=60', timeout: 120_000 });
   for (const ends = Date.now() + 150_000; Date.now() < ends;) {
     if (await page.locator('#ws-name-field').isVisible().catch(() => false)) break;
     const clicked = await page.evaluate(title => {
