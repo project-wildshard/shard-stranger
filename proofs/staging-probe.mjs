@@ -19,7 +19,7 @@
 // with (signed admission).
 //   node proofs/staging-probe.mjs <engine checkout> <out dir> [--base=https://staging.wildshard.io|http://127.0.0.1:<port>] [--slug=proof-stranger] [--cases=wolves,harvest,…] [--third]
 import { verify } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { enterZone } from '@wildshard/sdk/headless/scripts/zone-entry.mjs'; // CHUNK-PARAM-REMOVAL CP20 (J522): no zone in any address
@@ -32,7 +32,8 @@ const local = /^http:\/\/(127\.0\.0\.1|localhost):[0-9]{2,5}$/u.test(base);
 if (!local && !/^https:\/\/(staging|preview)\.wildshard\.io$/u.test(base)) throw new Error('--base takes staging, preview or a local dev world only (J205)');
 const third = process.argv.includes('--third');
 const cases = flag('cases', 'horse,chameleon,deer,wolves,harvest,mech,boss').split(',').filter(Boolean), slug = flag('slug', 'proof-stranger');
-const at = file => import(pathToFileURL(resolve(engineDir, 'scripts', file)).href);
+// The engine checkout is lean (f928fdae2): its own scripts in src/scripts/, the kit's in src/scripts/.kit/.
+const at = file => import(pathToFileURL([resolve(engineDir, 'src/scripts', file), resolve(engineDir, 'src/scripts/.kit', file)].find(path => existsSync(path)) ?? resolve(engineDir, 'src/scripts', file)).href);
 const { chromium, webkit, devices } = await at('browser-playwright.mjs');
 const { KEYCHAIN_ARGS } = await at('chromium-keychain.mjs');
 const { saveFixture } = await at('debug-settings.mjs');
